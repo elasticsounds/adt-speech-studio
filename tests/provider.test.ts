@@ -34,7 +34,7 @@ describe('Speech provider contracts', () => {
     )
     const result = await synthesize(
       'Hello',
-      { ...DEFAULT_SETTINGS, instructions: 'Warm voice' },
+      { ...DEFAULT_SETTINGS, model: 'gemini-2.5-flash-preview-tts', instructions: 'Warm voice' },
       'secret',
       new AbortController().signal,
       fetcher,

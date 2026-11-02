@@ -31,6 +31,15 @@ const { app, jobs } = await createApp({
           },
         ],
       })
+    if (String(_url).endsWith('/interactions'))
+      return Response.json({
+        steps: [
+          {
+            type: 'model_output',
+            content: [{ type: 'audio', mime_type: 'audio/wav', data: tone.toString('base64') }],
+          },
+        ],
+      })
     return Response.json({
       candidates: [
         {

@@ -11,7 +11,7 @@ export const Settings = z.object({
     .min(1)
     .max(120)
     .regex(/^[a-zA-Z0-9._-]+$/)
-    .default('gemini-2.5-flash-preview-tts'),
+    .default('gemini-3.8-flash-tts'),
   voice: z
     .string()
     .min(1)
@@ -33,11 +33,11 @@ export const Settings = z.object({
 export type Settings = z.infer<typeof Settings>
 export const DEFAULT_SETTINGS = Settings.parse({})
 export const GEMINI_MODELS = [
-  'gemini-2.5-flash-preview-tts',
-  'gemini-2.5-pro-preview-tts',
-  'gemini-3.1-flash-tts-preview',
   'gemini-3.8-flash-tts',
   'gemini-3.8-flash-lite-tts',
+  'gemini-3.1-flash-tts-preview',
+  'gemini-2.5-pro-preview-tts',
+  'gemini-2.5-flash-preview-tts',
 ]
 export const OPENAI_MODELS = ['gpt-4o-mini-tts', 'tts-1', 'tts-1-hd']
 export const GEMINI_VOICES = [

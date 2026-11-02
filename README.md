@@ -13,7 +13,7 @@ A standalone web workspace for language strings and text-to-speech in exported *
 5. Choose a model, voice and delivery instructions. Use **Generate missing**, select particular entries, or **Regenerate all**. The confirmation lets you include every imported language. Changing settings alone does not start a paid request.
 6. **Download ADT** to get a reader ZIP containing your changes. Your original ZIP is always downloadable too.
 
-Gemini is the default provider. OpenAI speech is also supported. Optional normalization uses Gemini regardless of the speech provider and can prepare numbers, abbreviations, symbols and mathematical expressions without changing display text. The language profiles are adapted from ADT Studio.
+Gemini 3.8 Flash TTS is the default model. Legacy 2.5 TTS options remain for compatibility; Google lists their retirement as November 17, 2026 ([model schedule](https://ai.google.dev/gemini-api/docs/deprecations/)). OpenAI speech is also supported. Optional normalization uses Gemini regardless of the speech provider and can prepare numbers, abbreviations, symbols and mathematical expressions without changing display text. The language profiles are adapted from ADT Studio.
 
 Private workspaces are separated by account. Model API charges are billed to the supplied key. The hosted pilot has a 2 GB storage allowance per account, including the original ZIP, extracted files, audio history and exports. Delete unused workspaces to free space. It currently uses one persistent server; it is not a high-availability service.
 

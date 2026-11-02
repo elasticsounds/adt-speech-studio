@@ -13,11 +13,10 @@ let transport: ReturnType<typeof vi.fn<typeof fetch>>
 const key = 'test-personal-secret'
 const payload = () =>
   Response.json({
-    candidates: [
+    steps: [
       {
-        content: {
-          parts: [{ inlineData: { mimeType: 'audio/wav', data: tone.toString('base64') } }],
-        },
+        type: 'model_output',
+        content: [{ type: 'audio', mime_type: 'audio/wav', data: tone.toString('base64') }],
       },
     ],
   })
@@ -275,6 +274,12 @@ it('cancels in-flight work without late publication and blocks concurrent edits'
   expect((await entries()).find((e) => e.id === 'pg001_p' && e.language === 'en')!.version).toBe(0)
 })
 it('exports generated mappings and serves downloadable audio including byte ranges', async () => {
+  // A completed durable receipt must already release the editing/export guard.
+  const save = system.store.saveJob.bind(system.store)
+  vi.spyOn(system.store, 'saveJob').mockImplementation(async (job) => {
+    await save(job)
+    if (job.status === 'completed') await new Promise((r) => setTimeout(r, 40))
+  })
   await finish((await start({ scope: 'selected', ids: ['pg001_p'] })).id)
   const response = await call(
     `/books/${bookId}/audio?language=en&id=pg001_p`,
@@ -285,9 +290,9 @@ it('exports generated mappings and serves downloadable audio including byte rang
   )
   expect(response.status).toBe(206)
   expect((await response.arrayBuffer()).byteLength).toBe(44)
-  const exported = (await (await call(`/books/${bookId}/export`, 'POST', {})).json()) as {
-    id: string
-  }
+  const exportedResponse = await call(`/books/${bookId}/export`, 'POST', {})
+  expect(exportedResponse.status, await exportedResponse.clone().text()).toBe(200)
+  const exported = (await exportedResponse.json()) as { id: string }
   const file = await call(`/books/${bookId}/exports/${exported.id}`)
   expect(file.status).toBe(200)
   const target = path.join(root, 'output.zip')

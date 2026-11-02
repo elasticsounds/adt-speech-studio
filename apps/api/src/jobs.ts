@@ -32,7 +32,7 @@ import {
 export class Jobs {
   private active = new Map<
     string,
-    { job: Job; controller: AbortController; promise: Promise<void> }
+    { job: Job; controller: AbortController; promise: Promise<void>; finished: boolean }
   >()
   private entryCount = 0
   private entryQueue: Array<() => void> = []
@@ -66,7 +66,7 @@ export class Jobs {
     readonly transport: typeof fetch = fetch,
   ) {}
   busy(bookId: string) {
-    return [...this.active.values()].some((v) => v.job.bookId === bookId)
+    return [...this.active.values()].some((v) => v.job.bookId === bookId && !v.finished)
   }
   async recover() {
     const booksRoot = path.join(this.store.root, 'books')
@@ -148,9 +148,12 @@ export class Jobs {
   }
   async start(owner: string, bookId: string, request: RunRequest, credentials: Credentials) {
     return this.store.exclusive('job-admission', async () => {
-      if ([...this.active.values()].some((v) => v.job.ownerId === owner))
+      if ([...this.active.values()].some((v) => v.job.ownerId === owner && !v.finished))
         throw new Error('You already have a generation job running. Finish or cancel it first.')
-      if (this.active.size >= Number(process.env.MAX_CONCURRENT_JOBS ?? 3))
+      if (
+        [...this.active.values()].filter((v) => !v.finished).length >=
+        Number(process.env.MAX_CONCURRENT_JOBS ?? 3)
+      )
         throw new Error('The server is busy. Please try again shortly.')
       const state = await this.store.load(owner, bookId)
       if (request.language !== '*' && !state.book.languages.includes(request.language))
@@ -184,11 +187,13 @@ export class Jobs {
         await this.store.saveSettings(owner, bookId, language, request.settings)
       await this.store.saveJob(job)
       const controller = new AbortController()
-      const record = { job, controller, promise: Promise.resolve() }
+      const record = { job, controller, promise: Promise.resolve(), finished: false }
       this.active.set(job.id, record)
-      record.promise = this.run(job, plan.ids, credentials, controller.signal).finally(() =>
-        this.active.delete(job.id),
-      )
+      record.promise = this.run(job, plan.ids, credentials, controller.signal)
+        .catch(() => {
+          console.error(JSON.stringify({ event: 'job-receipt-write-failed', jobId: job.id }))
+        })
+        .finally(() => this.active.delete(job.id))
       return job
     })
   }
@@ -388,12 +393,20 @@ export class Jobs {
       }
     }
     try {
-      await Promise.all(Array.from({ length: request.concurrency }, worker))
-      job.status = signal.aborted ? 'cancelled' : job.status === 'failed' ? 'failed' : 'completed'
+      const outcomes = await Promise.allSettled(Array.from({ length: request.concurrency }, worker))
+      job.status = signal.aborted
+        ? 'cancelled'
+        : job.status === 'failed' || outcomes.some((result) => result.status === 'rejected')
+          ? 'failed'
+          : 'completed'
     } catch {
       job.status = signal.aborted ? 'cancelled' : 'failed'
     } finally {
       job.activeIds = []
+      // No entry can publish after this point. Release mutation admission before
+      // the completed receipt becomes visible, while shutdown still awaits it.
+      const active = this.active.get(job.id)
+      if (active) active.finished = true
       await save()
     }
   }
