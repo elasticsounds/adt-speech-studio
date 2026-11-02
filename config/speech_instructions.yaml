@@ -1,0 +1,90 @@
+default: Speak in a cheerful and positive tone.
+en: Speak in a cheerful and positive tone.
+en-jm: |-
+  Speak the text in a standard Jamaican English accent. Use the pronunciation and
+  intonation typical of a Jamaican urban area. Maintain a calm, conversational tone friendly for education.
+sq: |
+  Style: Warm, natural, child-friendly conversational cadence at a calm, measured pace.
+  Accent: Speak in an authentic Albanian accent native to Pristina, Kosovo. Use Gheg
+  dialect pacing, local regional vowel drops, and the distinct inflections typical of
+  Kosovo. Do not use a standard Tirana accent.
+
+  DO NOT CHANGE THE TEXT ITSELF. Read exactly what is written in Albanian. Do not
+  translate, paraphrase, or swap words. Use pronunciation influence only — never change
+  the vocabulary or grammar. Speak in a cheerful and positive tone.
+en-tz: |
+  Speak it in a Tanzanian English accent. Use the pronunciation and
+  intonation typical of Tanzania. Maintain a calm, conversational tone.
+  Speak in a cheerful and positive tone.
+sw-tz: |
+  Speak it in Tanzanian Swahili (Kiswahili cha Tanzania). Use the
+  pronunciation and intonation typical of mainland Tanzania, not Kenyan Swahili.
+  Speak in a cheerful and positive tone.
+pt: |
+  Speak it in a European Portuguese (Portugal) accent. Use the pronunciation
+  and intonation typical of Portugal, not Brazilian Portuguese. Key differences include:
+  - Pronounce 's' at the end of words (e.g., "português" sounds like "portuguesh")
+  - Use the closed vowel sounds characteristic of European Portuguese
+  - Maintain the rhythm and stress patterns of European Portuguese
+  DO NOT CHANGE THE TEXT ITSELF. Pronounce the words as written, but with
+  European Portuguese pronunciation.
+  Speak in a cheerful and positive tone.
+pt-br: |
+  Speak it in a Brazilian Portuguese accent. Use the pronunciation and
+  intonation typical of Brazil.
+  Speak in a cheerful and positive tone.
+ur: |
+  Speak it in natural, clear Urdu with a warm, child-friendly tone.
+
+  DO NOT CHANGE THE TEXT ITSELF. Read exactly what is written in Urdu.
+  Do not translate, paraphrase, or swap words from another language.
+
+  Preserve the intended pronunciation and rhythm of Urdu, and keep the
+  delivery cheerful and easy to follow.
+
+  Speak in a cheerful and positive tone in Pakistani accent.
+es-uy: |
+  Speak it in an Uruguayan Rioplatense accent. For example, pronounce
+  the 'y' sound in yacaré like 'sh' in 'shoe'. Pronounce the 'll' sound
+  in lluvia like 'sh' in 'shoe'.
+
+  DO NOT CHANGE THE TEXT ITSELF. For example if the text is written as
+  'escribe' then DO NOT SAY 'escribí' say it as 'escribe'.
+  If the text says Relee don't say Releé
+  If the text says Presta don't say Prestá say Presta
+  If the text says Describe say Describe don't say Describí
+
+  The Spanish word "puedes" ("you can") is pronounced approximately as:
+
+      PWEH-des
+
+      In IPA (International Phonetic Alphabet), it is written as:
+
+      [ˈpwe.ðes]
+
+      Phoneme breakdown:
+      pue → [pwe] (similar to English "pweh," with a glide from 'u' to 'e')
+      des → [ðes] (soft 'd', like 'th' in English "this," followed by "ess")
+
+  Speak in a cheerful and positive tone.
+np: |-
+  Speak the following Nepali text using an Uruguayan Rioplatense accent. For example, pronounce Nepali sounds in a way that reflects Rioplatense Spanish phonetics, such as using a “sh” sound similar to the ‘y’ in “yacaré” or the ‘ll’ in “lluvia.”
+
+  DO NOT CHANGE THE TEXT ITSELF. Read exactly what is written in Nepali. Do not modify words, grammar, or endings under any circumstances.
+
+  Maintain the original Nepali wording strictly. Even if something feels unnatural in speech, do not adjust it.
+
+  Use pronunciation influence only, not vocabulary or grammar changes.
+
+  Speak in a cheerful and positive tone.
+ne: |-
+  Speak the following Nepali text using an Uruguayan Rioplatense accent. For example, pronounce Nepali sounds in a way that reflects Rioplatense Spanish phonetics, such as using a “sh” sound similar to the ‘y’ in “yacaré” or the ‘ll’ in “lluvia.”
+
+  DO NOT CHANGE THE TEXT ITSELF. Read exactly what is written in Nepali. Do not modify words, grammar, or endings under any circumstances.
+
+  Maintain the original Nepali wording strictly. Even if something feels unnatural in speech, do not adjust it.
+
+  Use pronunciation influence only, not vocabulary or grammar changes.
+
+  Speak in a cheerful and positive tone.
+fr: Speak it an a French Benin accent. Use the pronunciation and intonation typical of Benin. Maintain a calm, conversational tone. Speak in a cheerful positive tone.

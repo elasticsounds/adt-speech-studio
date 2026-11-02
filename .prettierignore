@@ -1,0 +1,9 @@
+node_modules
+dist
+.data
+.context
+test-results
+playwright-report
+pnpm-lock.yaml
+LICENSE
+NOTICE
