@@ -176,7 +176,8 @@ export async function createApp(options: { root: string; transport?: typeof fetc
       await next()
     })
   })
-  const idle = (id: string) => {
+  const idle = async (id: string) => {
+    await jobs.settle(id)
     if (jobs.busy(id))
       throw new HTTPException(409, {
         message: 'A job is running for this ADT. Cancel it before editing or exporting.',
@@ -324,13 +325,13 @@ export async function createApp(options: { root: string; transport?: typeof fetc
   })
   app.delete('/api/books/:book', async (c) => {
     const id = c.req.param('book')
-    idle(id)
+    await idle(id)
     await store.delete(owner(c), id)
     return c.json({ ok: true })
   })
   app.put('/api/books/:book/entry', bodyLimit({ maxSize: 300000 }), async (c) => {
     const id = c.req.param('book')
-    idle(id)
+    await idle(id)
     const body = EditEntry.parse(await c.req.json()),
       { id: textId, language, version, ...patch } = body
     if (patch.speechText !== undefined) Object.assign(patch, { manualSpeech: true })
@@ -348,7 +349,7 @@ export async function createApp(options: { root: string; transport?: typeof fetc
   )
   app.post('/api/books/:book/restore', bodyLimit({ maxSize: 4096 }), async (c) => {
     const id = c.req.param('book')
-    idle(id)
+    await idle(id)
     const body = z
       .object({
         language: z.string(),
@@ -392,7 +393,7 @@ export async function createApp(options: { root: string; transport?: typeof fetc
   app.post('/api/books/:book/audio', bodyLimit({ maxSize: 30 * 1024 ** 2 }), async (c) => {
     const id = c.req.param('book'),
       user = owner(c)
-    idle(id)
+    await idle(id)
     const form = await c.req.formData(),
       body = EditEntry.parse({
         id: form.get('id'),
@@ -526,7 +527,7 @@ export async function createApp(options: { root: string; transport?: typeof fetc
   })
   app.post('/api/books/:book/export', async (c) => {
     const id = c.req.param('book')
-    idle(id)
+    await idle(id)
     const state = await store.load(owner(c), id)
     return store.exclusive('storage-admission', async () => {
       const dir = store.dir(owner(c), id),

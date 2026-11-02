@@ -146,8 +146,16 @@ export class Jobs {
       await atomicJson(file, usage)
     })
   }
+  async settle(bookId: string) {
+    await Promise.all(
+      [...this.active.values()]
+        .filter((v) => v.job.bookId === bookId && v.finished)
+        .map((v) => v.promise),
+    )
+  }
   async start(owner: string, bookId: string, request: RunRequest, credentials: Credentials) {
     return this.store.exclusive('job-admission', async () => {
+      await this.settle(bookId)
       if ([...this.active.values()].some((v) => v.job.ownerId === owner && !v.finished))
         throw new Error('You already have a generation job running. Finish or cancel it first.')
       if (
