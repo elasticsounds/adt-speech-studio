@@ -1,0 +1,11 @@
+# Standalone implementation
+
+The owner explicitly requested a new repository and working hosted implementation on 2026-11-02, narrowing the first release to exported ADT reader ZIPs, language-string inspection, missing-audio repair and full regeneration with another model. Access is open to anyone who signs in. This supersedes the proposed in-monorepo placement in ADT Studio SPEC-0023; that upstream PR is not merged or represented as independently approved.
+
+The standalone application uses React, Hono and TypeScript. It adapts the ADT Studio reader-file contract, Gemini speech conventions, normalization profiles and immutable-history principles. It does not require a full Studio database or PDF. Original files remain immutable; per-entry revisions point at immutable content-addressed audio. Export overlays only changed catalogs/audio/timecodes and recognized offline data.
+
+Public accounts use username/password sign-up with scrypt hashing and HttpOnly sessions, so deployment does not depend on obtaining an OAuth application. Account recovery uses a one-time recovery code; no email identity is asserted. Workspaces are private. Credentials for model calls are held only in memory or configured through server environment secrets. Service-funded calls require explicit configured quotas; personal keys never fall back to service credentials.
+
+The first release prioritizes the requested speech workflow. It supports Gemini and OpenAI, voice/style settings, editing/normalization, per-entry and bulk operations, retries/cancellation, audio upload/history and export. Translation generation, image translation, reader editing and new language creation remain separate features. Word timings are preserved only for unchanged audio; regenerated audio uses sentence highlighting. English UI ships first.
+
+Verification must cover unsafe ZIPs, cross-account isolation, credential handling, protected manual recordings, cache signatures, cancellation, history, both Gemini request families, and an actual browser upload/edit/generate/export workflow. Mocked provider tests are distinct from paid live-provider verification. Deployment requires a persistent volume and exactly one API writer instance.
