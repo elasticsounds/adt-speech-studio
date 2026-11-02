@@ -24,6 +24,12 @@ Source: the public `elasticsounds/Libri_new-adt-2` GitHub archive, revision `137
 - The updated reader opened in Chromium with no page errors. Its generated WAV loaded with a 7.35-second duration.
 - Test data, downloaded book content, provider credentials and recordings are excluded from the repository and the application source archive.
 
+## Hosted smoke test
+
+At https://adt-speech-studio.fly.dev, a fresh account uploaded the complete 304 MB reader in Chromium, displayed all 100 entries, connected a personal OpenAI key, generated `pg002003_im002`, played the recording and downloaded a 316,425,706-byte updated ZIP. The generated WAV was 379,244 bytes. The exported reader HTML, quiz HTML, reader runtime and display-text catalog matched the original byte-for-byte. No browser page errors occurred. The temporary production book was deleted after verification.
+
+The first deployment exposed an upload-admission bug caused by scanning the volume's root-owned `lost+found` directory. Storage accounting now scans only application-owned directories; a regression test covers this. Shared model credentials remain disabled. A final health/source-archive check follows deployment of the checked-in release.
+
 ## Operating boundaries
 
 One API process and persistent volume are required. The initial deployment uses private accounts with personal keys and disables shared service-funded calls. No new word alignment, translation generation, additional language creation or full Studio project import is included. See README for retention, backup and quota behavior.
