@@ -1,0 +1,6 @@
+ADT Speech Studio includes code and configuration adapted from ADT Studio:
+https://github.com/unicef/adt-studio (baseline f2e59a0d2).
+Copyright the ADT Studio contributors. Licensed under AGPL-3.0-or-later.
+Adaptations include speech normalization profiles, pronunciation guidance,
+PCM/WAV handling and compatibility with the ADT reader's file contracts.
+The complete corresponding application source is offered through /source.zip.
