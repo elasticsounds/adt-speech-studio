@@ -10,10 +10,12 @@ GitHub Pages hosts the interface. The existing Fly service runs account sign-in,
 
 1. Click **Sign in or create an account**. Sign in in the secure Fly window, save your recovery code if creating an account, then choose **Continue to GitHub workspace**. Allow the sign-in popup if your browser blocks it. No invitation or email is needed.
 2. Upload the reader ZIP exported from ADT Studio, up to 1 GB. A ZIP with one enclosing folder is also accepted. Catalogs are limited to 25,000 entries and 8 million combined display/spoken characters.
-3. Open **AI connection** and paste your Gemini API key. Add an OpenAI key too if you want text normalization. Keys stay in browser memory for this tab and server memory during the job; they are not saved. Reloading the page requires entering the key again.
+3. Open **AI connection** and paste your Gemini API key. Add an OpenAI key too for text normalization or word timestamps. Keys stay in browser memory for this tab and server memory during the job; they are not saved. Reloading the page requires entering the key again.
 4. Inspect **Language strings** and **Speech**, search by text or ID, edit spoken text, and listen to recordings.
 5. Choose a model, voice and delivery instructions. Use **Generate missing**, select particular entries, or **Regenerate all**. The confirmation shows the actual model, voice, scoped character count and estimated USD speech cost before you confirm a paid run. You can include every imported language. Changing settings alone does not start a paid request.
-6. **Download ADT** to get a reader ZIP containing your changes. Your original ZIP is always downloadable too.
+6. Enable **Word-by-word highlighting** before speech generation to create timestamps too, or use **Generate missing timestamps** / **Regenerate all timestamps** on existing recordings. Select entries for a smaller batch. Both narrator voices and all imported languages are supported. The confirmation shows the separate OpenAI estimate; timestamp-only jobs keep existing audio.
+7. Click the waveform icon beside a recording (or **Edit**) to view its waveform and highlighted transcript. Seek by word or waveform, adjust playback speed, inspect timecodes, and edit word boundaries. Edits are versioned and protected during regeneration. Review timings, especially for Albanian and normalized text: transcription can differ from the original words.
+8. **Download ADT** to get a reader ZIP containing your changes. Your original ZIP is always downloadable too.
 
 Gemini 3.8 Flash TTS is the default for new workspaces; saved model selections are preserved. Flash-Lite remains an optional choice, with a warning for Albanian because Google’s published Lite language list omits it. Legacy 2.5 TTS options remain for compatibility; Google lists their retirement as November 17, 2026 ([model schedule](https://ai.google.dev/gemini-api/docs/deprecations/)). OpenAI speech is also supported. Optional normalization uses OpenAI (`gpt-6-luna` by default) regardless of the speech provider and can prepare numbers, abbreviations, symbols and mathematical expressions without changing display text. The language profiles are adapted from ADT Studio.
 
@@ -25,6 +27,7 @@ Private workspaces are separated by account. Model API charges are billed to the
 - Missing-file detection, language/ID search, status filters, audio playback/download and manual WAV/MP3/OGG/FLAC upload.
 - Separate display/spoken text, mute, immutable revisions, restoration and protection for manual edits/recordings.
 - Gemini and OpenAI model/voice selection, style instructions, provider-specific temperature or speed.
+- Word timestamps alongside speech or separately, waveform playback, synchronized word highlighting and versioned boundary editing.
 - Normalization by itself or before speech, editable locale guidance, mathematical speech preparation.
 - Background jobs, progress, cancellation, retry unfinished entries, inspectable input/output logs and content-addressed caching. A changed voice/model/text/style has a different cache signature. Force generation bypasses reuse.
 - Streamed, bounded ZIP import; archive paths, symlinks and duplicates rejected. Uploaded HTML/JavaScript is never executed or served from the application origin.
@@ -35,7 +38,9 @@ Private workspaces are separated by account. Model API charges are billed to the
 
 The interface is English. This app does not generate translations, add language folders, edit reader pages or accept full Studio project/database archives. It needs the exported reader layout above. Books with an unknown custom offline preloader can be inspected and exported unchanged; changed export is blocked rather than risk stale offline data.
 
-New speech does not generate precise word timings. Existing timing data is retained only for unchanged recordings. Recent ADT readers offer **Settings → Highlight → Word**, using approximate word timings when precise timings are absent; Easy Read and older readers may use sentence highlighting. Speech Studio preserves the uploaded reader version and does not add a highlighting control to its audio preview.
+Word timestamps use OpenAI `whisper-1` at $0.006 per audio minute, in addition to speech/normalization charges. This ports Studio's timestamp contract; [OpenAI schedules Whisper retirement for February 26, 2027](https://developers.openai.com/api/docs/models/whisper-1). Timestamp generation accepts supported WAV/MP3/MP4/MPEG/MPGA/M4A/WebM files below 25 MB; imported OGG/FLAC remain playable/exportable but need a supported replacement recording for transcription. Failed timestamps retain successful speech; retry reuses the recording. Timing edits and generation create new versions and are restored with audio through history.
+
+Generated and unchanged imported timings are exported for both narrator voices, including offline data. Recent ADT readers offer **Settings → Highlight → Word**, using approximate timings when precise timings are absent; Easy Read and older readers may use sentence highlighting. Speech Studio preserves the uploaded reader version. Its preview highlights the actual timed transcript rather than assuming word alignment with different display text.
 
 Cost estimates use standard paid provider rates and assume fresh generation. Gemini estimates include input text/instructions and estimated audio duration (600–1,000 characters/minute); voice, language and pacing can move the actual charge outside the range. Caching can reduce costs. Retries, normalization and taxes are excluded. Gemini 3.8 promotional rates double automatically in estimates on January 1, 2027. TTS-1/HD use character rates; GPT-4o Mini TTS shows its published token rates with an unavailable estimate because audio token usage cannot be reliably predicted here. Preview models and voice availability depend on your provider account. Review generated speech before distributing a textbook.
 
@@ -59,7 +64,7 @@ pnpm test:e2e         # actual browser workflow, using a test-only mock provider
 
 ## GitHub Pages frontend
 
-The `Publish GitHub Pages` workflow builds and tests the app, then publishes only `dist/pages/`. Pages is configured with **GitHub Actions** as its source. It deploys pushes to `tts-cost-confirmation` (the current pilot branch), `fix-workspace-bugs`, `openai-normalization`, `github-pages` or `main`. The repository's `github-pages` environment must allow the publishing branch. No Fly or model secrets are needed by this workflow.
+The `Publish GitHub Pages` workflow builds and tests the app, then publishes only `dist/pages/`. Pages is configured with **GitHub Actions** as its source. It deploys pushes to `word-timings-ui` (the current pilot branch), `tts-cost-confirmation`, `fix-workspace-bugs`, `openai-normalization`, `github-pages` or `main`. The repository's `github-pages` environment must allow the publishing branch. No Fly or model secrets are needed by this workflow.
 
 `pnpm build` followed by `pnpm build:pages` creates the static frontend at `/adt-speech-studio/`, targeting `https://adt-speech-studio.fly.dev`. If forking, update both values in `scripts/build-pages.mjs`, set the backend's `PUBLIC_WEB_URL` to the new Pages URL, and deploy the backend too. Deploy backend changes before publishing a frontend that requires them.
 

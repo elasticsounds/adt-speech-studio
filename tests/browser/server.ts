@@ -14,6 +14,21 @@ const root = await fs.mkdtemp(path.join(os.tmpdir(), 'speech-browser-'))
 const { app, jobs } = await createApp({
   root,
   transport: async (_url, init) => {
+    if (String(_url) === 'https://api.openai.com/v1/audio/transcriptions') {
+      if ((init?.headers as Record<string, string>).Authorization !== 'Bearer pages-openai-key')
+        return new Response(null, { status: 401 })
+      const audio = (init!.body as FormData).get('file') as Blob
+      const bytes = Buffer.from(await audio.arrayBuffer())
+      const duration = bytes.readUInt32LE(40) / 48000
+      return Response.json({
+        text: 'Every plant',
+        duration,
+        words: [
+          { word: 'Every', start: 0, end: duration / 2 },
+          { word: 'plant', start: duration / 2, end: duration },
+        ],
+      })
+    }
     if (String(_url) === 'https://api.openai.com/v1/responses') {
       if ((init?.headers as Record<string, string>).Authorization !== 'Bearer pages-openai-key')
         return new Response(null, { status: 401 })

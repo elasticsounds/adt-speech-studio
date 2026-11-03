@@ -51,7 +51,7 @@ export function TimingEditor({
             min={0}
             max={timings.duration}
             step="0.01"
-            value={start}
+            value={Number.isFinite(start) ? Number(start.toFixed(3)) : ''}
             onChange={(e) => setStart(e.target.valueAsNumber)}
           />
         </Field>
@@ -62,7 +62,7 @@ export function TimingEditor({
             min={0}
             max={timings.duration}
             step="0.01"
-            value={end}
+            value={Number.isFinite(end) ? Number(end.toFixed(3)) : ''}
             onChange={(e) => setEnd(e.target.valueAsNumber)}
           />
         </Field>

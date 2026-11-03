@@ -49,7 +49,9 @@ export function JobsPanel({
           {running
             ? job.request.operation === 'normalize'
               ? 'Preparing spoken text…'
-              : 'Recording your ADT…'
+              : job.request.operation === 'timestamps'
+                ? 'Generating word timestamps…'
+                : 'Recording your ADT…'
             : job.status === 'completed'
               ? 'Generation finished'
               : job.status === 'cancelled'
@@ -73,7 +75,9 @@ export function JobsPanel({
         <p className="text-[11px] text-stone-500">
           {job.request.operation === 'normalize'
             ? job.request.settings.normalizationModel
-            : `${job.request.settings.model} · ${job.request.settings.voice}`}{' '}
+            : job.request.operation === 'timestamps'
+              ? 'whisper-1'
+              : `${job.request.settings.model} · ${job.request.settings.voice}`}{' '}
           · {job.language === '*' ? 'All languages' : job.language}
         </p>
         <div className="flex gap-2">

@@ -1,7 +1,15 @@
 name: Publish GitHub Pages
 on:
   push:
-    branches: [tts-cost-confirmation, fix-workspace-bugs, openai-normalization, github-pages, main]
+    branches:
+      [
+        word-timings-ui,
+        tts-cost-confirmation,
+        fix-workspace-bugs,
+        openai-normalization,
+        github-pages,
+        main,
+      ]
   workflow_dispatch:
 concurrency:
   group: github-pages

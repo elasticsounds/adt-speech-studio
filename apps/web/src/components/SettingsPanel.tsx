@@ -7,6 +7,7 @@ import {
   type Settings,
 } from '@speech/types'
 import { Field } from './ui'
+import { TimestampNotice } from './TimestampNotice'
 
 export function SettingsPanel({
   value,
@@ -148,6 +149,22 @@ export function SettingsPanel({
             />
           </label>
         </div>
+        <div className="border-t border-stone-100 pt-5">
+          <label className="flex items-start justify-between gap-3 text-sm font-semibold">
+            Word-by-word highlighting
+            <input
+              type="checkbox"
+              className="mt-1 accent-emerald-800"
+              checked={value.wordHighlighting}
+              onChange={(e) => patch({ wordHighlighting: e.target.checked })}
+            />
+          </label>
+          <p className="mt-2 text-xs leading-5 text-stone-500">
+            Generate word timestamps after speech. Uses an OpenAI key even with Gemini;
+            transcription costs extra. Turn off to generate audio only.
+          </p>
+          {value.wordHighlighting && <TimestampNotice />}
+        </div>
         <details className="rounded-xl border border-stone-200">
           <summary className="cursor-pointer px-3 py-3 text-xs font-medium text-stone-600">
             Text preparation settings
@@ -186,9 +203,9 @@ export function SettingsPanel({
       </fieldset>
       <div className="mt-5 flex items-start gap-2 rounded-xl bg-stone-50 p-3 text-[11px] leading-5 text-stone-500">
         <Info size={15} className="mt-0.5 shrink-0" />
-        In recent ADT readers, enable Settings → Highlight → Word. New recordings use approximate
-        word highlighting; precise timings are kept only for unchanged recordings. Older readers and
-        Easy Read may use sentence highlighting.
+        Open a recording’s waveform to review synchronized word highlighting. Generated timestamps
+        are included in the downloaded ADT. In recent readers, enable Settings → Highlight → Word.
+        Older readers and Easy Read may use sentence highlighting.
       </div>
       <p className="mt-4 flex items-center gap-1.5 text-[11px] text-emerald-800">
         <ShieldCheck size={14} />

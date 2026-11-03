@@ -11,5 +11,7 @@ export function waveformPeaks(samples: Float32Array, bars = 96) {
   return peaks.map((p) => p / maximum)
 }
 export function activeWord(words: Array<{ start: number; end: number }>, time: number) {
-  return words.findIndex((word) => time >= word.start && time < word.end)
+  // Media clocks can round a seek just below Whisper's floating-point word boundary.
+  const at = time + 0.001
+  return words.findIndex((word) => at >= word.start && at < word.end)
 }
