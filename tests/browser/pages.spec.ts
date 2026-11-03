@@ -59,11 +59,20 @@ test('GitHub Pages layout uses first-party sign-in and bearer-only upload, audio
   await expect(page.getByText('Generation finished', { exact: true })).toBeVisible()
   await expect(page.getByText('gpt-6-luna · en', { exact: true })).toBeVisible()
   await page.getByLabel('Normalize before speech', { exact: true }).check()
+  await page.getByLabel('Word-by-word highlighting', { exact: true }).check()
   await page.getByRole('button', { name: 'Generate missing', exact: true }).click()
+  await expect(page.getByRole('dialog')).toContainText('Estimated word-timestamp cost (USD)')
+  await expect(page.getByRole('dialog')).toContainText('Word timestamps: whisper-1')
   await page.getByRole('button', { name: 'Confirm paid generation', exact: true }).click()
   // Wait for the new speech job, not the previous normalization completion.
   await expect(page.getByText('gemini-3.8-flash-tts · Kore · en', { exact: true })).toBeVisible()
   await expect(page.getByText('Generation finished', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Waveform pg001_p', exact: true }).click()
+  await expect(page.getByText(/Timed transcript.*generated/)).toBeVisible()
+  await expect(
+    page.getByRole('button', { name: 'Seek to word 2: plant', exact: true }),
+  ).toBeVisible()
+  await page.getByRole('button', { name: 'Close dialog', exact: true }).click()
   const download = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Download ADT', exact: true }).click()
   await (await download).saveAs(path.join(root, 'updated.zip'))

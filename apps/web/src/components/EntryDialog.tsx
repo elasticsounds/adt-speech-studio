@@ -14,12 +14,14 @@ export function EntryDialog({
   slot,
   onClose,
   onUpdated,
+  onGenerateTimings,
 }: {
   book: string
   entry: Entry
   slot: VoiceSlot
   onClose: () => void
   onUpdated: () => void
+  onGenerateTimings: () => void
 }) {
   const [text, setText] = useState(entry.text),
     [speech, setSpeech] = useState(entry.speechText),
@@ -142,6 +144,7 @@ export function EntryDialog({
               entry={entry}
               slot={slot}
               disabled={dirty}
+              onGenerate={onGenerateTimings}
               onUpdated={() => {
                 onUpdated()
                 onClose()

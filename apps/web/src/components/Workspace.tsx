@@ -202,9 +202,11 @@ export function Workspace({
   const run = useMutation({
     mutationFn: () => api.run(bookId, proposal!, keys),
     onSuccess: (job) => {
-      for (const lang of job.language === '*' ? detail.data!.book.languages : [job.language])
-        delete drafts.current[lang]
-      seeded.current = ''
+      if (job.request.operation !== 'timestamps') {
+        for (const lang of job.language === '*' ? detail.data!.book.languages : [job.language])
+          delete drafts.current[lang]
+        seeded.current = ''
+      }
       setProposal(null)
       setSelected(new Set())
       refresh()
@@ -226,6 +228,7 @@ export function Workspace({
     scope: RunRequest['scope'],
     operation: RunRequest['operation'] = 'speech',
     ids = [...selected],
+    force = false,
   ) => {
     setActionError(null)
     run.reset()
@@ -237,7 +240,7 @@ export function Workspace({
       settings: { ...settings },
       credentialMode: mode,
       operation,
-      force: false,
+      force,
       replaceManual: false,
       concurrency: 2,
     })
@@ -486,6 +489,27 @@ export function Workspace({
                 </div>
               </div>
             </div>
+            <div className="flex flex-wrap items-center gap-2 border-b border-stone-100 px-4 py-3">
+              <span className="mr-auto text-xs text-stone-500">
+                Word timestamps · existing recordings
+              </span>
+              <Button
+                variant="ghost"
+                className="text-xs"
+                disabled={busy}
+                onClick={() => begin('all', 'timestamps', [], true)}
+              >
+                Regenerate all timestamps
+              </Button>
+              <Button
+                variant="secondary"
+                className="text-xs"
+                disabled={busy}
+                onClick={() => begin(selected.size ? 'selected' : 'missing', 'timestamps')}
+              >
+                {selected.size ? 'Generate selected timestamps' : 'Generate missing timestamps'}
+              </Button>
+            </div>
             {!connected && (
               <div className="flex items-center justify-between gap-3 border-b border-amber-100 bg-amber-50/50 px-5 py-3">
                 <p className="text-xs text-stone-600">
@@ -705,6 +729,11 @@ export function Workspace({
           slot={slot}
           onClose={() => setEditing(null)}
           onUpdated={refresh}
+          onGenerateTimings={() => {
+            const entry = editing
+            setEditing(null)
+            begin('selected', 'timestamps', [entry.id], !!entry.audios[slot]?.timings)
+          }}
         />
       )}
       {reviewing && (
@@ -718,6 +747,11 @@ export function Workspace({
             entry={reviewing}
             slot={slot}
             disabled={busy}
+            onGenerate={() => {
+              const entry = reviewing
+              setReviewing(null)
+              begin('selected', 'timestamps', [entry.id], !!entry.audios[slot]?.timings)
+            }}
             onUpdated={() => {
               refresh()
               setReviewing(null)
@@ -730,9 +764,11 @@ export function Workspace({
           title={
             proposal.operation === 'normalize'
               ? 'Prepare spoken text'
-              : proposal.scope === 'missing'
-                ? 'Generate missing recordings'
-                : 'Regenerate recordings'
+              : proposal.operation === 'timestamps'
+                ? 'Generate word timestamps'
+                : proposal.scope === 'missing'
+                  ? 'Generate missing recordings'
+                  : 'Regenerate recordings'
           }
           onClose={() => setProposal(null)}
         >
@@ -741,13 +777,23 @@ export function Workspace({
               Model:{' '}
               {proposal.operation === 'normalize'
                 ? proposal.settings.normalizationModel
-                : proposal.settings.model}
+                : proposal.operation === 'timestamps'
+                  ? 'whisper-1'
+                  : proposal.settings.model}
             </p>
             <p className="mt-1 text-xs text-stone-500">
               {proposal.operation === 'speech' ? `Voice: ${proposal.settings.voice} · ` : ''}
               {proposal.language === '*' ? 'All languages' : proposal.language} · {proposal.slot}{' '}
               voice
             </p>
+            {proposal.operation === 'timestamps' && (
+              <p className="mt-2 text-xs text-stone-600">
+                Uses existing {proposal.slot} recordings. Audio and voice settings stay unchanged.
+              </p>
+            )}
+            {proposal.operation === 'speech' && proposal.settings.wordHighlighting && (
+              <p className="mt-2 text-xs text-stone-600">Word timestamps: whisper-1 · OpenAI</p>
+            )}
           </div>
           {proposal.scope !== 'selected' && book.languages.length > 1 && (
             <label className="mb-4 flex items-center gap-2 text-sm">
@@ -785,7 +831,9 @@ export function Workspace({
                 onChange={(e) => setProposal({ ...proposal, replaceManual: e.target.checked })}
               />
               <span>
-                Include manually edited speech / recordings
+                {proposal.operation === 'timestamps'
+                  ? 'Include manually edited word timings'
+                  : 'Include manually edited speech / recordings / timings'}
                 <span className="mt-1 block text-xs leading-5 text-stone-500">
                   Previous versions stay available in history.
                 </span>
@@ -802,10 +850,11 @@ export function Workspace({
               {plan.data?.protected ?? 0} protected · {plan.data?.muted ?? 0} muted
             </p>
           </div>
-          {proposal.operation === 'speech' && (
+          {proposal.operation !== 'normalize' && (
             <SpeechCostReview
               request={proposal}
               cost={plan.data?.speechCost}
+              timestampCost={plan.data?.timestampCost}
               loading={plan.isFetching}
               languages={book.languages}
             />
@@ -830,7 +879,9 @@ export function Workspace({
               <AudioLines size={16} />
               {proposal.operation === 'normalize'
                 ? 'Start normalization'
-                : 'Confirm paid generation'}
+                : proposal.operation === 'timestamps'
+                  ? 'Confirm paid timestamp generation'
+                  : 'Confirm paid generation'}
             </Button>
           </div>
         </Modal>

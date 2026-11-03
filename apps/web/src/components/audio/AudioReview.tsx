@@ -97,6 +97,7 @@ export function AudioReview({
           Speed
           <select
             className="input !w-auto !py-1 text-xs"
+            aria-label="Playback speed"
             value={speed}
             onChange={(e) => {
               const s = Number(e.target.value)

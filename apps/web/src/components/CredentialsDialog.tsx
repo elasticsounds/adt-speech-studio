@@ -61,7 +61,10 @@ export function CredentialsDialog({
           >
             Get a Gemini API key <ExternalLink size={12} />
           </a>
-          <Field label="OpenAI API key" hint="Required for text normalization and OpenAI speech.">
+          <Field
+            label="OpenAI API key"
+            hint="Required for word timestamps, text normalization and OpenAI speech."
+          >
             <input
               type="password"
               className="input font-mono"
