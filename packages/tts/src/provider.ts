@@ -133,7 +133,7 @@ export function redact(message: string, keys: string[], max = 600) {
   for (const key of keys) if (key) value = value.replaceAll(key, '[redacted]')
   return value.replace(/(?:AIza|sk-)[A-Za-z0-9_-]{10,}/g, '[redacted]').slice(0, max)
 }
-async function request(
+export async function request(
   url: string,
   headers: Record<string, string>,
   body: unknown,
@@ -150,8 +150,11 @@ async function request(
     try {
       response = await transport(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...headers },
-        body: JSON.stringify(body),
+        headers: {
+          ...(body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
+          ...headers,
+        },
+        body: body instanceof FormData ? body : JSON.stringify(body),
         signal: AbortSignal.any([signal, AbortSignal.timeout(120000)]),
       })
     } catch (error) {
@@ -205,7 +208,7 @@ async function boundedBytes(response: Response) {
   }
   return Buffer.concat(chunks)
 }
-async function boundedJson(response: Response) {
+export async function boundedJson(response: Response) {
   return JSON.parse((await boundedBytes(response)).toString('utf8')) as Record<string, any>
 }
 export async function synthesize(
