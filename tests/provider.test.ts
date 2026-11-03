@@ -106,7 +106,8 @@ describe('Speech provider contracts', () => {
     expect(init.headers).toMatchObject({ Authorization: 'Bearer secret' })
     expect(init.headers).not.toHaveProperty('x-goog-api-key')
     const body = JSON.parse(init.body as string)
-    expect(body.model).toBe('gpt-4.1-mini')
+    expect(body.model).toBe('gpt-6-luna')
+    expect(body.reasoning).toEqual({ effort: 'none' })
     expect(body.store).toBe(false)
     expect(body.text.format).toMatchObject({ type: 'json_schema', strict: true })
     expect(body.text.format.schema.additionalProperties).toBe(false)
@@ -202,4 +203,21 @@ it.each([
       async () => Response.json(payload),
     ),
   ).rejects.toThrow()
+})
+
+it('keeps explicitly pinned alternative OpenAI models compatible', async () => {
+  const fetcher = vi.fn(async () => Response.json(normalizationPayload()))
+  await normalizeText(
+    '12 flowers',
+    'en',
+    { ...DEFAULT_SETTINGS, normalizationModel: 'gpt-4.1-mini-2025-04-14' },
+    'secret',
+    new AbortController().signal,
+    fetcher,
+  )
+  const body = JSON.parse(
+    (fetcher.mock.calls[0] as unknown as [string, RequestInit])[1].body as string,
+  )
+  expect(body.model).toBe('gpt-4.1-mini-2025-04-14')
+  expect(body).not.toHaveProperty('reasoning')
 })

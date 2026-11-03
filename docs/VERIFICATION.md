@@ -2,7 +2,7 @@
 
 ## Automated
 
-- `pnpm test`: 52 passing tests across provider contracts, streaming WAV handling, ZIP security/preservation, account isolation, CSRF, recovery, exact-origin CORS and separate bearer sessions, immutable history, cancellation, cache behavior, quotas, manual protection, normalization, secondary narration and interrupted-job recovery.
+- `pnpm test`: 54 passing tests across provider contracts, streaming WAV handling, ZIP security/preservation, account isolation, CSRF, recovery, exact-origin CORS and separate bearer sessions, immutable history, cancellation, cache behavior, quotas, manual protection, normalization, secondary narration and interrupted-job recovery.
 - `pnpm build`: strict TypeScript compilation, Vite frontend and esbuild API production build passed.
 - `pnpm test:e2e`: three Chromium tests passed: the desktop workflow (including mobile workspace layout), mobile sign-in, and the separate-origin GitHub Pages workflow. Desktop covers sign-up, import, inspection, speech edit, key connection, missing generation, voice change, all-language generation, playback, search and downloaded ZIP contents. The test provider is mocked and absent from the production bundle.
 
@@ -51,3 +51,7 @@ Issue #5 routes all normalization to OpenAI Responses, with `gpt-4.1-mini` as th
 Live OpenAI checks expanded “12” and “3” correctly in both languages: “The garden has twelve flowers and three trees.” and “Ana ka dymbëdhjetë libra dhe tre lapsa.” These calls used the shipped locale guidance and structured-output contract. `pnpm test` (52 tests), `pnpm build` and all three Chromium workflows passed locally. The owner added `OPENAI_API_KEY` to Fly's secret store for shared normalization.
 
 The deployed GitHub Pages workflow also passed using **only service credentials**, with no personal key entered. OpenAI normalized both English and Albanian entries. A fresh combined run used `gpt-4.1-mini` for normalization and `gemini-3.8-flash-tts` for narration, verified in the inspectable job logs. The resulting valid WAV was 223,076 bytes, played for 4.52 seconds in Chromium, and appeared in the downloaded ADT. No browser page errors occurred. The temporary account and book were removed. The job summary now displays the normalization model for normalization-only jobs.
+
+### GPT-6 Luna default
+
+The owner subsequently selected `gpt-6-luna` for normalization. Official model documentation confirms Responses and structured-output support, and a live API model check confirmed availability. The implementation uses `reasoning.effort: none` for this focused rewriting task, preserving the previous non-reasoning behavior. Both live English and Albanian number-expansion checks also passed with Luna. Legacy Gemini and the former `gpt-4.1-mini` default resolve to Luna for future operations; explicitly pinned alternative OpenAI snapshots remain usable. Historical requests are preserved and the cache version distinguishes the new effective settings. There are now 54 passing automated tests and three passing Chromium workflows.

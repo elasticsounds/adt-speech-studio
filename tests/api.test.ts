@@ -588,56 +588,59 @@ it('requires an OpenAI key for normalization without falling back between creden
   expect(await service.text()).toContain('OpenAI API key')
   expect(transport).not.toHaveBeenCalled()
 })
-it('resolves legacy normalization settings, preserves historical jobs and skips the old cache', async () => {
-  const old = await finish((await start({ scope: 'selected', ids: ['pg001_p'] })).id)
-  const legacy = { ...DEFAULT_SETTINGS, normalizationModel: 'gemini-2.5-flash' }
-  old.request.settings = legacy
-  await system.store.saveJob(old)
-  await system.store.saveSettings(old.ownerId, bookId, 'en', legacy)
-  const dir = system.store.dir(old.ownerId, bookId)
-  const oldSettings = await fs.readFile(path.join(dir, 'settings.json'), 'utf8')
-  const detail = (await (await call(`/books/${bookId}`)).json()) as BookDetail
-  expect(detail.settings.en.normalizationModel).toBe('gpt-4.1-mini')
-  expect(await fs.readFile(path.join(dir, 'settings.json'), 'utf8')).toBe(oldSettings)
-  const originalText = 'A garden has 12 flowers.'
-  const legacyCache = hash(
-    JSON.stringify([
-      'core-tts-1',
-      'en',
-      originalText,
-      legacy.normalizationModel,
-      legacy.profile,
-      legacy.math,
-    ]),
-  )
-  await fs.mkdir(path.join(dir, '.cache/text'), { recursive: true })
-  await fs.writeFile(
-    path.join(dir, '.cache/text', `${legacyCache}.json`),
-    JSON.stringify({ text: 'Legacy cached reading' }),
-  )
-  transport.mockClear()
-  transport.mockImplementation(async () => Response.json(normalizationPayload()))
-  const patch = {
-    operation: 'normalize' as const,
-    scope: 'selected' as const,
-    ids: ['pg002_n'],
-    settings: legacy,
-  }
-  const done = await finish((await start(patch)).id)
-  expect(done.request.settings.normalizationModel).toBe('gpt-4.1-mini')
-  expect(done.completed).toBe(1)
-  expect(transport).toHaveBeenCalledTimes(1)
-  expect(JSON.parse(transport.mock.calls[0][1]!.body as string).model).toBe('gpt-4.1-mini')
-  expect((await finish((await start(patch)).id)).completed).toBe(1)
-  expect(transport).toHaveBeenCalledTimes(1)
-  expect(
-    (await system.store.jobs(old.ownerId, bookId)).find((j) => j.id === old.id)!.request.settings
-      .normalizationModel,
-  ).toBe('gemini-2.5-flash')
-  expect((await entries()).find((e) => e.language === 'en' && e.id === 'pg002_n')!.speechText).toBe(
-    'Twelve flowers',
-  )
-})
+it.each(['gemini-2.5-flash', 'gpt-4.1-mini'])(
+  'resolves legacy normalization setting %s, preserves historical jobs and skips the old cache',
+  async (legacyModel) => {
+    const old = await finish((await start({ scope: 'selected', ids: ['pg001_p'] })).id)
+    const legacy = { ...DEFAULT_SETTINGS, normalizationModel: legacyModel }
+    old.request.settings = legacy
+    await system.store.saveJob(old)
+    await system.store.saveSettings(old.ownerId, bookId, 'en', legacy)
+    const dir = system.store.dir(old.ownerId, bookId)
+    const oldSettings = await fs.readFile(path.join(dir, 'settings.json'), 'utf8')
+    const detail = (await (await call(`/books/${bookId}`)).json()) as BookDetail
+    expect(detail.settings.en.normalizationModel).toBe('gpt-6-luna')
+    expect(await fs.readFile(path.join(dir, 'settings.json'), 'utf8')).toBe(oldSettings)
+    const originalText = 'A garden has 12 flowers.'
+    const legacyCache = hash(
+      JSON.stringify([
+        legacyModel.startsWith('gemini-') ? 'core-tts-1' : 'core-tts-openai-1',
+        'en',
+        originalText,
+        legacy.normalizationModel,
+        legacy.profile,
+        legacy.math,
+      ]),
+    )
+    await fs.mkdir(path.join(dir, '.cache/text'), { recursive: true })
+    await fs.writeFile(
+      path.join(dir, '.cache/text', `${legacyCache}.json`),
+      JSON.stringify({ text: 'Legacy cached reading' }),
+    )
+    transport.mockClear()
+    transport.mockImplementation(async () => Response.json(normalizationPayload()))
+    const patch = {
+      operation: 'normalize' as const,
+      scope: 'selected' as const,
+      ids: ['pg002_n'],
+      settings: legacy,
+    }
+    const done = await finish((await start(patch)).id)
+    expect(done.request.settings.normalizationModel).toBe('gpt-6-luna')
+    expect(done.completed).toBe(1)
+    expect(transport).toHaveBeenCalledTimes(1)
+    expect(JSON.parse(transport.mock.calls[0][1]!.body as string).model).toBe('gpt-6-luna')
+    expect((await finish((await start(patch)).id)).completed).toBe(1)
+    expect(transport).toHaveBeenCalledTimes(1)
+    expect(
+      (await system.store.jobs(old.ownerId, bookId)).find((j) => j.id === old.id)!.request.settings
+        .normalizationModel,
+    ).toBe(legacyModel)
+    expect(
+      (await entries()).find((e) => e.language === 'en' && e.id === 'pg002_n')!.speechText,
+    ).toBe('Twelve flowers')
+  },
+)
 it('does not publish partial normalization or call speech after incomplete OpenAI output', async () => {
   transport.mockImplementation(async () =>
     Response.json({ ...normalizationPayload(), status: 'incomplete' }),

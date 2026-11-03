@@ -4,7 +4,7 @@ export const Provider = z.enum(['gemini', 'openai'])
 export type Provider = z.infer<typeof Provider>
 export const VoiceSlot = z.enum(['primary', 'secondary'])
 export type VoiceSlot = z.infer<typeof VoiceSlot>
-export const DEFAULT_NORMALIZATION_MODEL = 'gpt-4.1-mini'
+export const DEFAULT_NORMALIZATION_MODEL = 'gpt-6-luna'
 export const Settings = z.object({
   provider: Provider.default('gemini'),
   model: z

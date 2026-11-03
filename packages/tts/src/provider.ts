@@ -315,10 +315,11 @@ export async function synthesize(
   return decodeAudio(audio.data, audio.mimeType)
 }
 
-export const NORMALIZATION_VERSION = 'core-tts-openai-1'
+export const NORMALIZATION_VERSION = 'core-tts-openai-2'
 // Resolve legacy settings for future work without rewriting historical receipts.
 export function openAINormalizationSettings(settings: Settings): Settings {
-  return settings.normalizationModel.startsWith('gemini-')
+  return settings.normalizationModel.startsWith('gemini-') ||
+    settings.normalizationModel === 'gpt-4.1-mini'
     ? { ...settings, normalizationModel: DEFAULT_NORMALIZATION_MODEL }
     : settings
 }
@@ -335,11 +336,13 @@ export async function normalizeText(
   onAttempt: (n: number) => Promise<void> = async () => {},
 ) {
   const prompt = normalizationPrompt(text, language, settings)
+  const model = openAINormalizationSettings(settings).normalizationModel
   const response = await request(
     'https://api.openai.com/v1/responses',
     { Authorization: `Bearer ${key}` },
     {
-      model: openAINormalizationSettings(settings).normalizationModel,
+      model,
+      ...(model === 'gpt-6-luna' ? { reasoning: { effort: 'none' } } : {}),
       input: prompt,
       store: false,
       max_output_tokens: 16384,
