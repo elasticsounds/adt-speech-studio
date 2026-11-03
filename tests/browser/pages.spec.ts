@@ -43,6 +43,7 @@ test('GitHub Pages layout uses first-party sign-in and bearer-only upload, audio
   await expect(page.getByRole('dialog')).toContainText('gpt-4.1-mini')
   await page.getByRole('button', { name: 'Start normalization', exact: true }).click()
   await expect(page.getByText('Generation finished', { exact: true })).toBeVisible()
+  await expect(page.getByText('gpt-4.1-mini · en', { exact: true })).toBeVisible()
   await page.getByLabel('Normalize before speech', { exact: true }).check()
   await page.getByRole('button', { name: 'Generate missing', exact: true }).click()
   await page.getByRole('button', { name: 'Start generation', exact: true }).click()

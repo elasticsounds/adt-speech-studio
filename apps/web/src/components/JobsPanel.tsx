@@ -71,8 +71,10 @@ export function JobsPanel({
       </div>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-[11px] text-stone-500">
-          {job.request.settings.model} · {job.request.settings.voice} ·{' '}
-          {job.language === '*' ? 'All languages' : job.language}
+          {job.request.operation === 'normalize'
+            ? job.request.settings.normalizationModel
+            : `${job.request.settings.model} · ${job.request.settings.voice}`}{' '}
+          · {job.language === '*' ? 'All languages' : job.language}
         </p>
         <div className="flex gap-2">
           <Button
