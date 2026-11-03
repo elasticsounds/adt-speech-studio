@@ -26,6 +26,7 @@ export const Settings = z.object({
   temperature: z.number().min(0).max(2).optional(),
   speed: z.number().min(0.25).max(4).default(1),
   normalize: z.boolean().default(false),
+  wordHighlighting: z.boolean().default(false),
   math: z.boolean().default(true),
   profile: z.string().max(12000).default(''),
   normalizationModel: z
@@ -166,7 +167,7 @@ export const RunRequest = z.object({
   ids: z.array(z.string().max(512)).max(25000).default([]),
   settings: Settings,
   credentialMode: z.enum(['personal', 'service']).default('personal'),
-  operation: z.enum(['speech', 'normalize']).default('speech'),
+  operation: z.enum(['speech', 'normalize', 'timestamps']).default('speech'),
   force: z.boolean().default(false),
   replaceManual: z.boolean().default(false),
   concurrency: z.number().int().min(1).max(3).default(2),
@@ -187,6 +188,7 @@ export const RunPlan = z.object({
   muted: z.number(),
   ids: z.array(z.string()),
   speechCost: SpeechCost.optional(),
+  timestampCost: SpeechCost.optional(),
 })
 export type RunPlan = z.infer<typeof RunPlan>
 export const Job = z.object({
