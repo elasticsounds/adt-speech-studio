@@ -228,7 +228,9 @@ export class Jobs {
         let input = ''
         let instructions = request.settings.instructions
         let model = request.settings.model
-        const log = async (status: CallLog['status'], response: string, operation = 'speech') => {
+        let operation = request.operation === 'normalize' ? 'normalization' : 'speech'
+        let normalizationCached = false
+        const log = async (status: CallLog['status'], response: string) => {
           const keys = Object.values(credentials).filter(Boolean) as string[]
           const value: CallLog = {
             at: new Date().toISOString(),
@@ -265,6 +267,7 @@ export class Jobs {
             request.operation === 'normalize' ||
             (request.settings.normalize && (!entry.manualSpeech || request.replaceManual))
           ) {
+            operation = 'normalization'
             model = request.settings.normalizationModel
             input = entry.text
             instructions = normalizationPrompt(entry.text, entry.language, request.settings)
@@ -282,7 +285,8 @@ export class Jobs {
             let text: string
             if (!request.force && (await exists(cache))) {
               text = (await jsonFile<{ text: string }>(cache)).text
-              await log('cached', text, 'normalization')
+              normalizationCached = true
+              await log('cached', text)
             } else {
               const normalized = await normalizeText(
                 entry.text,
@@ -296,7 +300,7 @@ export class Jobs {
               text = normalized.text
               signal.throwIfAborted()
               await atomicJson(cache, { text })
-              await log('done', text, 'normalization')
+              await log('done', text)
             }
             signal.throwIfAborted()
             entry = await this.store.revise(
@@ -311,9 +315,11 @@ export class Jobs {
           }
           if (request.operation === 'normalize') {
             job.completed++
-            job.results.push({ id, status: 'done' })
+            if (normalizationCached) job.cached++
+            job.results.push({ id, status: normalizationCached ? 'cached' : 'done' })
             continue
           }
+          operation = 'speech'
           input = entry.speechText.trim()
           model = request.settings.model
           instructions = request.settings.instructions

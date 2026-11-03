@@ -147,6 +147,7 @@ export function Workspace({
   const [proposal, setProposal] = useState<RunRequest | null>(null),
     [actionError, setActionError] = useState<unknown>(null)
   const seeded = useRef(''),
+    drafts = useRef<Record<string, Settings>>({}),
     jobMarker = useRef('')
   const refresh = () => {
     void client.invalidateQueries({ queryKey: ['book', bookId] })
@@ -163,12 +164,13 @@ export function Workspace({
     const key = language.toLowerCase().replaceAll('_', '-'),
       base = key.split('-')[0]
     setSettings(
-      detail.data.settings[language] ?? {
-        ...DEFAULT_SETTINGS,
-        instructions:
-          info?.instructions[key] ?? info?.instructions[base] ?? info?.instructions.default ?? '',
-        profile: info?.profiles[key] ?? info?.profiles[base] ?? info?.profiles.default ?? '',
-      },
+      drafts.current[language] ??
+        detail.data.settings[language] ?? {
+          ...DEFAULT_SETTINGS,
+          instructions:
+            info?.instructions[key] ?? info?.instructions[base] ?? info?.instructions.default ?? '',
+          profile: info?.profiles[key] ?? info?.profiles[base] ?? info?.profiles.default ?? '',
+        },
     )
   }, [detail.data, bookId, language, info])
   useEffect(() => {
@@ -196,7 +198,10 @@ export function Workspace({
   })
   const run = useMutation({
     mutationFn: () => api.run(bookId, proposal!, keys),
-    onSuccess: () => {
+    onSuccess: (job) => {
+      for (const lang of job.language === '*' ? detail.data!.book.languages : [job.language])
+        delete drafts.current[lang]
+      seeded.current = ''
       setProposal(null)
       setSelected(new Set())
       refresh()
@@ -671,7 +676,14 @@ export function Workspace({
             </button>
           </div>
         </section>
-        <SettingsPanel value={settings} onChange={setSettings} disabled={busy} />
+        <SettingsPanel
+          value={settings}
+          onChange={(value) => {
+            drafts.current[language] = value
+            setSettings(value)
+          }}
+          disabled={busy}
+        />
       </div>
       {editing && (
         <EntryDialog

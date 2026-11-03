@@ -416,14 +416,24 @@ it('counts only application-owned storage on a mounted data volume', async () =>
 it('bounds total in-flight entries even when a job requests three workers', async () => {
   let active = 0,
     maximum = 0
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
   transport.mockImplementation(async () => {
     active++
     maximum = Math.max(active, maximum)
-    await new Promise((r) => setTimeout(r, 15))
+    await gate
     active--
     return payload()
   })
-  const done = await finish((await start({ scope: 'all', concurrency: 3 })).id)
+  const job = await start({ scope: 'all', concurrency: 3 })
+  try {
+    await vi.waitFor(() => expect(active).toBe(2))
+  } finally {
+    release()
+  }
+  const done = await finish(job.id)
   expect(done.completed).toBe(6)
   expect(maximum).toBe(2)
 })
@@ -658,4 +668,84 @@ it('does not publish partial normalization or call speech after incomplete OpenA
   expect(done.failed).toBe(1)
   expect(transport).toHaveBeenCalledTimes(1)
   expect((await entries()).find((e) => e.language === 'en' && e.id === 'pg002_n')).toEqual(before)
+})
+
+it('accepts a one-time recovery code only once when requests overlap', async () => {
+  const account = await register('recovery_race')
+  // A concurrent session writer may leave an incomplete atomic-write temp file.
+  await fs.writeFile(path.join(root, 'sessions', 'unrelated.json.pending.tmp'), '{')
+  const passwords = ['first-password-long-enough', 'second-password-long-enough']
+  const attempts = await Promise.all(
+    passwords.map((password) =>
+      call(
+        '/auth/recover',
+        'POST',
+        {
+          username: 'recovery_race',
+          password,
+          recoveryCode: account.data.recoveryCode,
+        },
+        '',
+      ),
+    ),
+  )
+  expect(attempts.map((r) => r.status).sort()).toEqual([200, 400])
+  const winner = attempts.findIndex((r) => r.status === 200)
+  expect(
+    (
+      await call(
+        '/auth/login',
+        'POST',
+        { username: 'recovery_race', password: passwords[winner] },
+        '',
+      )
+    ).status,
+  ).toBe(200)
+  expect(
+    (
+      await call(
+        '/auth/login',
+        'POST',
+        { username: 'recovery_race', password: passwords[1 - winner] },
+        '',
+      )
+    ).status,
+  ).toBe(400)
+})
+
+it('serves suffix and oversized audio ranges and describes unsatisfiable ranges', async () => {
+  const url = `/books/${bookId}/audio?language=en&id=pg001_h`
+  const suffix = await call(url, 'GET', undefined, cookie, { Range: 'bytes=-10' })
+  expect(suffix.status).toBe(206)
+  expect(Buffer.from(await suffix.arrayBuffer())).toEqual(tone.subarray(-10))
+  const oversized = await call(url, 'GET', undefined, cookie, { Range: 'bytes=0-999999' })
+  expect(oversized.status).toBe(206)
+  expect(Buffer.from(await oversized.arrayBuffer())).toEqual(tone)
+  const invalid = await call(url, 'GET', undefined, cookie, { Range: `bytes=${tone.length}-` })
+  expect(invalid.status).toBe(416)
+  expect(invalid.headers.get('Content-Range')).toBe(`bytes */${tone.length}`)
+  for (const range of ['bytes=-0', 'bytes=-', 'bytes=20-10', 'bytes=99999999999999999999-'])
+    expect((await call(url, 'GET', undefined, cookie, { Range: range })).status).toBe(416)
+  const user = await system.auth.user(cookie.split('=')[1])
+  const audio = await system.store.audioPath(user!.id, bookId, 'en', 'pg001_h', 'primary')
+  await fs.writeFile(audio, '')
+  const empty = await call(url)
+  expect(empty.status).toBe(200)
+  expect((await empty.arrayBuffer()).byteLength).toBe(0)
+})
+
+it('reports cached normalization and labels normalization failures accurately', async () => {
+  transport.mockImplementation(async () => Response.json(normalizationPayload()))
+  const options = { scope: 'selected' as const, ids: ['pg002_n'], operation: 'normalize' as const }
+  expect((await finish((await start(options)).id)).completed).toBe(1)
+  const cached = await finish((await start(options)).id)
+  expect(cached.cached).toBe(1)
+  expect(cached.results[0].status).toBe('cached')
+  expect(transport).toHaveBeenCalledTimes(1)
+  transport.mockImplementation(async () => Response.json({ status: 'incomplete' }))
+  const failed = await finish((await start({ ...options, force: true })).id)
+  const logs = await (await call(`/books/${bookId}/jobs/${failed.id}/logs`)).json()
+  expect(logs).toEqual([
+    expect.objectContaining({ operation: 'normalization', status: 'failed', model: 'gpt-6-luna' }),
+  ])
 })
