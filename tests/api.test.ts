@@ -10,6 +10,7 @@ import {
   type Entry,
   type BookDetail,
 } from '@speech/types'
+import { Store } from '../apps/api/src/store.js'
 import { createApp } from '../apps/api/src/app.js'
 import { makeFixture, tone, normalizationPayload } from './fixture.js'
 import { filesUnder, jsonFile, hash } from '../packages/bundle/src/files.js'
@@ -795,4 +796,116 @@ it('estimates only eligible speech entries without starting jobs or calling a pr
   expect(replacing.speechCost!.highUsd).toBeGreaterThan(0)
   expect(await (await call(`/books/${bookId}/jobs`)).json()).toEqual([])
   expect(transport).not.toHaveBeenCalled()
+})
+
+it('reads imported timings, protects concurrent edits, and restores timings with their recording', async () => {
+  const url = `/books/${bookId}/timings?language=en&id=pg001_h&slot=primary`
+  const timing = (await (await call(url)).json()) as {
+    text: string
+    duration: number
+    words: Array<{ word: string; start: number; end: number }>
+  }
+  expect(timing.words).toEqual([{ word: 'A', start: 0, end: 0.1 }])
+  const user = ((await (await call('/auth/me')).json()) as { user: { id: string } }).user.id
+  const file = path.join(system.store.dir(user, bookId), 'baseline.json')
+  const legacy = await jsonFile<Entry[]>(file)
+  for (const e of legacy) for (const a of Object.values(e.audios)) if (a) delete a.timings
+  await fs.writeFile(file, JSON.stringify(legacy))
+  const reloaded = await new Store(root).load(user, bookId)
+  expect(
+    [...reloaded.entries.values()].find((e) => e.language === 'en' && e.id === 'pg001_h')?.audios
+      .primary?.timings?.source,
+  ).toBe('imported')
+
+  const other = (await register('timing_other')).cookie
+  expect((await call(url, 'GET', undefined, other)).status).not.toBe(200)
+  const body = {
+    language: 'en',
+    id: 'pg001_h',
+    slot: 'primary',
+    version: 0,
+    timings: { ...timing, words: [{ word: 'A', start: 0.01, end: 0.08 }] },
+  }
+  expect((await call(`/books/${bookId}/timings`, 'PUT', body)).status).toBe(200)
+  expect((await call(`/books/${bookId}/timings`, 'PUT', body)).status).toBe(400)
+  expect(
+    (
+      await call(`/books/${bookId}/timings`, 'PUT', {
+        ...body,
+        version: 1,
+        timings: { ...timing, words: [{ word: 'A', start: -1, end: 1 }] },
+      })
+    ).status,
+  ).toBe(400)
+  expect((await (await call(url + '&version=0')).json()).words[0].start).toBe(0)
+  expect((await (await call(url)).json()).words[0].start).toBe(0.01)
+  await call(`/books/${bookId}/entry`, 'PUT', {
+    language: 'en',
+    id: 'pg001_h',
+    version: 1,
+    speechText: 'Changed words',
+  })
+  expect(await (await call(url)).json()).toBeNull()
+  await call(`/books/${bookId}/restore`, 'POST', {
+    language: 'en',
+    id: 'pg001_h',
+    version: 2,
+    restoreVersion: 1,
+  })
+  expect((await (await call(url)).json()).words[0].start).toBe(0.01)
+  expect(transport).not.toHaveBeenCalled()
+})
+
+it('exports generated primary and secondary timecodes and updates offline data', async () => {
+  const owner = ((await (await call('/auth/me')).json()) as { user: { id: string } }).user.id
+  const original = (await entries()).find((e) => e.language === 'en' && e.id === 'pg001_h')!
+  const timing = {
+    text: 'A seed',
+    duration: 0.1,
+    words: [
+      { word: 'A', start: 0, end: 0.03 },
+      { word: 'seed', start: 0.03, end: 0.1 },
+    ],
+  }
+  const primary = await system.store.saveTimings(
+    owner,
+    bookId,
+    original,
+    'primary',
+    timing,
+    'generated',
+  )
+  const both = await system.store.revise(
+    owner,
+    bookId,
+    'en',
+    original.id,
+    primary.version,
+    {
+      audios: { ...primary.audios, secondary: { ...original.audios.primary!, timings: undefined } },
+    },
+    'Secondary fixture',
+  )
+  await system.store.saveTimings(owner, bookId, both, 'secondary', timing, 'generated')
+  const exported = (await (await call(`/books/${bookId}/export`, 'POST', {})).json()) as {
+    id: string
+  }
+  const response = await call(`/books/${bookId}/exports/${exported.id}`)
+  const zip = path.join(root, 'timing-export.zip'),
+    out = path.join(root, 'timing-export')
+  await fs.writeFile(zip, Buffer.from(await response.arrayBuffer()))
+  await extractArchive(zip, out)
+  const primaryMap = await jsonFile<any>(
+    path.join(out, 'content/i18n/en/timecode/timecode_output.json'),
+  )
+  const voices = await jsonFile<any>(
+    path.join(out, 'content/i18n/en/timecode/timecode_voices.json'),
+  )
+  expect(primaryMap.pg001_h.timecodes[1].word_timestamps[1].text).toBe('seed')
+  expect(voices.secondary.pg001_h).toEqual(primaryMap.pg001_h)
+  expect(voices.primary.pg001_h).toEqual(primaryMap.pg001_h)
+  expect(await fs.readFile(path.join(out, 'assets/offline-preloader.js'), 'utf8')).toContain(
+    'timecode_voices.json',
+  )
+  expect((await jsonFile<any>(path.join(out, 'assets/config.json'))).features.highlight).toBe(true)
 })

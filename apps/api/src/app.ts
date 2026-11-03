@@ -19,6 +19,7 @@ import {
   RunRequest,
   VoiceSlot,
   Settings,
+  TimingEdit,
   type Credentials,
   type PublicUser,
 } from '@speech/types'
@@ -28,6 +29,7 @@ import { Jobs } from './jobs.js'
 import { extractArchive, MAX_UPLOAD, MAX_EXPANDED } from '../../../packages/bundle/src/archive.js'
 import { readCatalog, entryKey } from '../../../packages/bundle/src/catalog.js'
 import { exportBook } from '../../../packages/bundle/src/export.js'
+import { readWordTimings } from '../../../packages/bundle/src/timings.js'
 import {
   atomicJson,
   directoryBytes,
@@ -460,6 +462,42 @@ export async function createApp(options: { root: string; transport?: typeof fetc
       c.req.query('download') ? `recording${path.extname(file)}` : undefined,
       c.req.header('Range'),
     )
+  })
+  app.get('/api/books/:book/timings', async (c) => {
+    const user = owner(c),
+      book = c.req.param('book')
+    const state = await store.load(user, book)
+    const version = c.req.query('version'),
+      language = c.req.query('language') ?? '',
+      id = c.req.query('id') ?? ''
+    const entry =
+      version === undefined
+        ? state.entries.get(entryKey(language, id))
+        : (await store.history(user, book, language, id)).find(
+            (e) => e.version === z.coerce.number().int().min(0).parse(version),
+          )
+    if (!entry) throw new Error('Text entry not found.')
+    return c.json(
+      await readWordTimings(
+        store.dir(user, book),
+        entry,
+        VoiceSlot.parse(c.req.query('slot') ?? 'primary'),
+      ),
+    )
+  })
+  app.put('/api/books/:book/timings', bodyLimit({ maxSize: 2000000 }), async (c) => {
+    const user = owner(c),
+      book = c.req.param('book'),
+      body = TimingEdit.parse(await c.req.json())
+    await idle(book)
+    const state = await store.load(user, book),
+      entry = state.entries.get(entryKey(body.language, body.id))
+    if (!entry || entry.version !== body.version)
+      throw new Error('This entry changed. Reload it before saving.')
+    const current = await readWordTimings(store.dir(user, book), entry, body.slot)
+    if (!current || Math.abs(body.timings.duration - current.duration) > 0.01)
+      throw new Error('Generate timestamps first; the recording duration cannot be edited.')
+    return c.json(await store.saveTimings(user, book, entry, body.slot, body.timings, 'manual'))
   })
   app.post('/api/books/:book/audio', bodyLimit({ maxSize: 30 * 1024 ** 2 }), async (c) => {
     const id = c.req.param('book'),
