@@ -9,6 +9,10 @@ import { jsonFile } from '../../packages/bundle/src/files.js'
 test('sign up, import, inspect, edit, generate missing, change voice and download a working overlay', async ({
   page,
 }) => {
+  let startedJobs = 0
+  page.on('request', (r) => {
+    if (r.method() === 'POST' && r.url().endsWith('/jobs')) startedJobs++
+  })
   const errors: string[] = []
   page.on('pageerror', (e) => errors.push(e.message))
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'speech-e2e-')),
@@ -25,12 +29,27 @@ test('sign up, import, inspect, edit, generate missing, change voice and downloa
   await page.getByRole('button', { name: 'AI connection' }).click()
   await page.getByLabel('Google / Gemini API key', { exact: true }).fill('browser-test-key')
   await page.getByRole('button', { name: 'Done', exact: true }).click()
+  await expect(page.getByLabel('Model', { exact: true })).toHaveValue('gemini-3.8-flash-lite-tts')
   await page.getByLabel('Voice', { exact: true }).fill('Puck')
   await page.getByLabel('Language', { exact: true }).selectOption('es')
   await expect(page.getByLabel('Voice', { exact: true })).toHaveValue('Kore')
   await page.getByLabel('Voice', { exact: true }).fill('Charon')
   await page.getByLabel('Language', { exact: true }).selectOption('en')
   await expect(page.getByLabel('Voice', { exact: true })).toHaveValue('Puck')
+  for (const selected of [false, true]) {
+    if (selected) await page.getByLabel('Select pg001_p', { exact: true }).check()
+    await page
+      .getByRole('button', {
+        name: selected ? 'Generate selected' : 'Generate pg001_p',
+        exact: true,
+      })
+      .click()
+    await expect(page.getByRole('dialog')).toContainText('1 entries')
+    await expect(page.getByRole('dialog')).toContainText('Estimated TTS cost (USD)')
+    await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+    if (selected) await page.getByLabel('Select pg001_p', { exact: true }).uncheck()
+  }
+  expect(startedJobs).toBe(0)
   await page.getByRole('button', { name: 'Edit pg002_n', exact: true }).click()
   await page
     .getByLabel('Spoken text', { exact: true })
@@ -38,16 +57,29 @@ test('sign up, import, inspect, edit, generate missing, change voice and downloa
   await page.getByRole('button', { name: 'Save changes' }).click()
   await expect(page.getByText('Our garden has twelve beautiful flowers.')).toBeVisible()
   await page.getByRole('button', { name: 'Generate missing', exact: true }).click()
-  await expect(page.getByRole('dialog')).toContainText('5 entries')
-  await page.getByRole('button', { name: 'Start generation', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog).toContainText('5 entries')
+  await expect(dialog).toContainText('Model: gemini-3.8-flash-lite-tts')
+  await expect(dialog).toContainText('Voice: Puck')
+  await expect(dialog).toContainText('Estimated TTS cost (USD)')
+  await expect(dialog).toContainText(/\$0\.\d+/)
+  await expect(dialog).toContainText('Are you sure you want to generate')
+  await expect(dialog).toContainText('incur charges on your API key')
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+  expect(startedJobs).toBe(0)
+  await page.getByRole('button', { name: 'Generate missing', exact: true }).click()
+  await page.getByRole('button', { name: 'Confirm paid generation', exact: true }).click()
   await expect(page.getByText('Generation finished', { exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Play pg001_p', exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Play pg001_p', exact: true }).click()
   await page.getByLabel('Voice', { exact: true }).fill('Zephyr')
   await page.getByRole('button', { name: 'Regenerate all', exact: true }).click()
+  await expect(dialog).toContainText('Voice: Zephyr')
+  await expect(dialog).toContainText('Are you sure you want to regenerate')
   await page.getByLabel('Apply to all 2 languages').check()
   await expect(page.getByRole('dialog')).toContainText('12 entries')
-  await page.getByRole('button', { name: 'Start generation', exact: true }).click()
+  await expect(dialog).not.toContainText('Estimate unavailable')
+  await page.getByRole('button', { name: 'Confirm paid generation', exact: true }).click()
   await expect(page.getByText('12 of 12', { exact: false })).toBeVisible()
   await page.getByLabel('Language', { exact: true }).selectOption('es')
   await expect(page.getByLabel('Voice', { exact: true })).toHaveValue('Zephyr')

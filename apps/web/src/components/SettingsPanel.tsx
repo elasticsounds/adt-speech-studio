@@ -47,6 +47,7 @@ export function SettingsPanel({
         </Field>
         <Field label="Model">
           <select
+            aria-label="Model"
             className="input text-xs"
             value={value.model}
             onChange={(e) => patch({ model: e.target.value })}
@@ -185,8 +186,9 @@ export function SettingsPanel({
       </fieldset>
       <div className="mt-5 flex items-start gap-2 rounded-xl bg-stone-50 p-3 text-[11px] leading-5 text-stone-500">
         <Info size={15} className="mt-0.5 shrink-0" />
-        New recordings use sentence highlighting. Word timings are kept only for unchanged
-        recordings.
+        In recent ADT readers, enable Settings → Highlight → Word. New recordings use approximate
+        word highlighting; precise timings are kept only for unchanged recordings. Older readers and
+        Easy Read may use sentence highlighting.
       </div>
       <p className="mt-4 flex items-center gap-1.5 text-[11px] text-emerald-800">
         <ShieldCheck size={14} />

@@ -36,6 +36,7 @@ import { Button, ErrorNotice, Modal, Status } from './ui'
 import { EntryDialog } from './EntryDialog'
 import { SettingsPanel } from './SettingsPanel'
 import { JobsPanel } from './JobsPanel'
+import { SpeechCostReview } from './SpeechCostReview'
 
 function LanguageName({ code }: { code: string }) {
   let name = code
@@ -707,12 +708,13 @@ export function Workspace({
         >
           <div className="mb-5 rounded-xl bg-[#f2f6f1] p-4">
             <p className="text-sm font-semibold">
+              Model:{' '}
               {proposal.operation === 'normalize'
                 ? proposal.settings.normalizationModel
                 : proposal.settings.model}
             </p>
             <p className="mt-1 text-xs text-stone-500">
-              {proposal.operation === 'speech' ? `${proposal.settings.voice} · ` : ''}
+              {proposal.operation === 'speech' ? `Voice: ${proposal.settings.voice} · ` : ''}
               {proposal.language === '*' ? 'All languages' : proposal.language} · {proposal.slot}{' '}
               voice
             </p>
@@ -770,6 +772,14 @@ export function Workspace({
               {plan.data?.protected ?? 0} protected · {plan.data?.muted ?? 0} muted
             </p>
           </div>
+          {proposal.operation === 'speech' && (
+            <SpeechCostReview
+              request={proposal}
+              cost={plan.data?.speechCost}
+              loading={plan.isFetching}
+              languages={book.languages}
+            />
+          )}
           <p className="mb-4 flex gap-2 text-xs leading-6 text-stone-500">
             <Info size={15} className="mt-1 shrink-0" />
             {mode === 'personal'
@@ -783,12 +793,14 @@ export function Workspace({
               Cancel
             </Button>
             <Button
-              disabled={!plan.data?.count || plan.isFetching}
+              disabled={!plan.data?.count || plan.isFetching || plan.isError}
               busy={run.isPending}
               onClick={() => run.mutate()}
             >
               <AudioLines size={16} />
-              {proposal.operation === 'normalize' ? 'Start normalization' : 'Start generation'}
+              {proposal.operation === 'normalize'
+                ? 'Start normalization'
+                : 'Confirm paid generation'}
             </Button>
           </div>
         </Modal>

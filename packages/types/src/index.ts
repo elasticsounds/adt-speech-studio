@@ -5,6 +5,7 @@ export type Provider = z.infer<typeof Provider>
 export const VoiceSlot = z.enum(['primary', 'secondary'])
 export type VoiceSlot = z.infer<typeof VoiceSlot>
 export const DEFAULT_NORMALIZATION_MODEL = 'gpt-6-luna'
+export const DEFAULT_SPEECH_MODEL = 'gemini-3.8-flash-lite-tts'
 export const Settings = z.object({
   provider: Provider.default('gemini'),
   model: z
@@ -12,7 +13,7 @@ export const Settings = z.object({
     .min(1)
     .max(120)
     .regex(/^[a-zA-Z0-9._-]+$/)
-    .default('gemini-3.8-flash-tts'),
+    .default(DEFAULT_SPEECH_MODEL),
   voice: z
     .string()
     .min(1)
@@ -34,8 +35,8 @@ export const Settings = z.object({
 export type Settings = z.infer<typeof Settings>
 export const DEFAULT_SETTINGS = Settings.parse({})
 export const GEMINI_MODELS = [
+  DEFAULT_SPEECH_MODEL,
   'gemini-3.8-flash-tts',
-  'gemini-3.8-flash-lite-tts',
   'gemini-3.1-flash-tts-preview',
   'gemini-2.5-pro-preview-tts',
   'gemini-2.5-flash-preview-tts',
@@ -168,12 +169,21 @@ export const RunRequest = z.object({
   concurrency: z.number().int().min(1).max(3).default(2),
 })
 export type RunRequest = z.infer<typeof RunRequest>
+export const SpeechCost = z.object({
+  lowUsd: z.number().nonnegative().optional(),
+  highUsd: z.number().nonnegative().optional(),
+  basis: z.string(),
+  sourceUrl: z.string().url(),
+  ratesChecked: z.string(),
+})
+export type SpeechCost = z.infer<typeof SpeechCost>
 export const RunPlan = z.object({
   count: z.number(),
   characters: z.number(),
   protected: z.number(),
   muted: z.number(),
   ids: z.array(z.string()),
+  speechCost: SpeechCost.optional(),
 })
 export type RunPlan = z.infer<typeof RunPlan>
 export const Job = z.object({
