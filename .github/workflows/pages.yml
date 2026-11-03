@@ -8,6 +8,7 @@ concurrency:
   cancel-in-progress: false
 permissions:
   contents: read
+  pages: read
 jobs:
   build:
     runs-on: ubuntu-latest
