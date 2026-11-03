@@ -47,6 +47,8 @@ test('GitHub Pages layout uses first-party sign-in and bearer-only upload, audio
   await page.getByLabel('Normalize before speech', { exact: true }).check()
   await page.getByRole('button', { name: 'Generate missing', exact: true }).click()
   await page.getByRole('button', { name: 'Start generation', exact: true }).click()
+  // Wait for the new speech job, not the previous normalization completion.
+  await expect(page.getByText('gemini-3.8-flash-tts · Kore · en', { exact: true })).toBeVisible()
   await expect(page.getByText('Generation finished', { exact: true })).toBeVisible()
   const download = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Download ADT', exact: true }).click()

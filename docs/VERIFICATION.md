@@ -32,7 +32,7 @@ The first deployment exposed an upload-admission bug caused by scanning the volu
 
 ## Operating boundaries
 
-One API process and persistent volume are required. The initial deployment uses private accounts with personal keys and disables shared service-funded calls. No new word alignment, translation generation, additional language creation or full Studio project import is included. See README for retention, backup and quota behavior.
+One API process and persistent volume are required. Private accounts can use personal keys or the service secrets and daily allowances subsequently configured by the owner. No new word alignment, translation generation, additional language creation or full Studio project import is included. See README for retention, backup and quota behavior.
 
 ## GitHub Pages follow-up
 
@@ -55,3 +55,5 @@ The deployed GitHub Pages workflow also passed using **only service credentials*
 ### GPT-6 Luna default
 
 The owner subsequently selected `gpt-6-luna` for normalization. Official model documentation confirms Responses and structured-output support, and a live API model check confirmed availability. The implementation uses `reasoning.effort: none` for this focused rewriting task, preserving the previous non-reasoning behavior. Both live English and Albanian number-expansion checks also passed with Luna. Legacy Gemini and the former `gpt-4.1-mini` default resolve to Luna for future operations; explicitly pinned alternative OpenAI snapshots remain usable. Historical requests are preserved and the cache version distinguishes the new effective settings. There are now 54 passing automated tests and three passing Chromium workflows.
+
+The deployed Pages app also passed using only the owner's service secrets: Luna normalized English and Albanian strings, then a fresh normalization-before-Gemini speech job produced a valid 196,196-byte WAV with a 3.96-second browser duration. The updated ADT contained that recording, and job logs confirmed `gpt-6-luna` and `gemini-3.8-flash-tts`. No browser page errors occurred; the temporary book and account were removed. The Pages browser test now waits for the new speech job's model before its completion message, preventing a race with the preceding normalization job's completion message.
