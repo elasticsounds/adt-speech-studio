@@ -116,6 +116,7 @@ export class Store {
     version: number,
     patch: Partial<Entry>,
     action: string,
+    signal?: AbortSignal,
   ) {
     return this.exclusive(id, async () => {
       const state = await this.load(owner, id)
@@ -144,6 +145,7 @@ export class Store {
       await fs.mkdir(path.dirname(file), { recursive: true })
       await this.exclusive('storage-admission', async () => {
         await this.capacity(owner, Buffer.byteLength(JSON.stringify(next)) + 65536)
+        signal?.throwIfAborted()
         await fs.writeFile(file, JSON.stringify(next), { flag: 'wx', mode: 0o600 })
       })
       state.entries.set(key, next)
@@ -256,9 +258,11 @@ export class Store {
     slot: VoiceSlot,
     timings: WordTimings,
     source: 'generated' | 'manual',
+    signal?: AbortSignal,
   ) {
     const ref = await this.exclusive('storage-admission', async () => {
       await this.capacity(owner, JSON.stringify(timings).length * 2 + 65536)
+      signal?.throwIfAborted()
       return writeWordTimings(this.dir(owner, id), entry, slot, timings, source)
     })
     return this.revise(
@@ -269,6 +273,7 @@ export class Store {
       entry.version,
       { audios: { ...entry.audios, [slot]: { ...entry.audios[slot]!, timings: ref } } },
       source === 'manual' ? 'Edited word timestamps' : 'Generated word timestamps',
+      signal,
     )
   }
   async delete(owner: string, id: string) {

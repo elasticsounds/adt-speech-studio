@@ -909,3 +909,144 @@ it('exports generated primary and secondary timecodes and updates offline data',
   )
   expect((await jsonFile<any>(path.join(out, 'assets/config.json'))).features.highlight).toBe(true)
 })
+
+const timedWords = {
+  text: 'A seed becomes a story',
+  duration: 0.1,
+  words: [
+    { word: 'A', start: 0, end: 0.02 },
+    { word: 'seed', start: 0.02, end: 0.1 },
+  ],
+}
+it('runs timestamp-only work with just OpenAI, caches it and protects manual timings', async () => {
+  transport.mockImplementation(async (url, init) => {
+    expect(url).toBe('https://api.openai.com/v1/audio/transcriptions')
+    expect(init!.body).toBeInstanceOf(FormData)
+    expect((init!.headers as Record<string, string>).Authorization).toBe('Bearer only-openai')
+    return Response.json(timedWords)
+  })
+  const options = request({
+    operation: 'timestamps',
+    scope: 'selected',
+    ids: ['pg001_h'],
+    force: true,
+  })
+  const response = await call(`/books/${bookId}/jobs`, 'POST', options, cookie, {
+    'X-OpenAI-Key': 'only-openai',
+  })
+  expect(response.status).toBe(202)
+  expect((await finish(((await response.json()) as Job).id)).completed).toBe(1)
+  const e = (await entries()).find((e) => e.language === 'en' && e.id === 'pg001_h')!
+  expect(((await (await call(`/books/${bookId}`)).json()) as BookDetail).settings).toEqual({})
+  expect(e.audios.primary?.source).toBe('imported')
+  expect(e.audios.primary?.timings?.source).toBe('generated')
+  expect((await finish((await start({ ...options, force: false })).id)).cached).toBe(1)
+  expect(transport).toHaveBeenCalledTimes(1)
+  const edited = await call(`/books/${bookId}/timings`, 'PUT', {
+    language: 'en',
+    id: e.id,
+    slot: 'primary',
+    version: e.version,
+    timings: timedWords,
+  })
+  expect(edited.status).toBe(200)
+  const plan = RunPlan.parse(await (await call(`/books/${bookId}/plan`, 'POST', options)).json())
+  expect(plan).toMatchObject({ count: 0, protected: 1 })
+  expect(plan.timestampCost?.highUsd).toBe(0)
+  expect(plan.speechCost).toBeUndefined()
+  const allowed = RunPlan.parse(
+    await (await call(`/books/${bookId}/plan`, 'POST', { ...options, replaceManual: true })).json(),
+  )
+  expect(allowed.timestampCost?.highUsd).toBeCloseTo(0.0001)
+})
+it('keeps successful speech when timestamps fail and retries without another speech call', async () => {
+  let speechCalls = 0,
+    timingCalls = 0
+  transport.mockImplementation(async (url) => {
+    if (String(url).endsWith('/interactions')) {
+      speechCalls++
+      return payload()
+    }
+    timingCalls++
+    return timingCalls === 1
+      ? new Response('bad audio', { status: 422 })
+      : Response.json(timedWords)
+  })
+  const options = {
+    scope: 'selected' as const,
+    ids: ['pg001_p'],
+    force: true,
+    settings: { ...DEFAULT_SETTINGS, wordHighlighting: true },
+  }
+  const failed = await finish((await start(options)).id)
+  expect(failed.failed).toBe(1)
+  expect(failed.results[0].error).toContain('Recording kept')
+  const recorded = (await entries()).find((e) => e.language === 'en' && e.id === 'pg001_p')!
+  expect(recorded.audios.primary?.exists).toBe(true)
+  expect(recorded.audios.primary?.timings).toBeUndefined()
+  const retry = await finish((await start({ ...options, force: false })).id)
+  expect(retry.completed).toBe(1)
+  expect(speechCalls).toBe(1)
+  expect(timingCalls).toBe(2)
+  const current = (await entries()).find((e) => e.language === 'en' && e.id === 'pg001_p')!
+  expect(current.audios.primary?.file).toBe(recorded.audios.primary?.file)
+  expect(current.audios.primary?.timings?.wordCount).toBe(2)
+  const logs = await (await call(`/books/${bookId}/jobs/${retry.id}/logs`)).json()
+  expect(logs).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ operation: 'timestamps', model: 'whisper-1', status: 'done' }),
+    ]),
+  )
+})
+it('requires the right timestamp credential and accounts for service transcription attempts', async () => {
+  vi.stubEnv('OPENAI_API_KEY', 'shared-timestamp-secret')
+  vi.stubEnv('SERVICE_DAILY_CHARACTERS', '10000')
+  const options = request({
+    operation: 'timestamps',
+    scope: 'selected',
+    ids: ['pg001_h'],
+    force: true,
+  })
+  expect(
+    (await call(`/books/${bookId}/jobs`, 'POST', options, cookie, { 'X-Gemini-API-Key': key }))
+      .status,
+  ).toBe(400)
+  expect(transport).not.toHaveBeenCalled()
+  transport.mockImplementation(async (_url, init) => {
+    expect((init!.headers as Record<string, string>).Authorization).toBe(
+      'Bearer shared-timestamp-secret',
+    )
+    return Response.json(timedWords)
+  })
+  const before = (await (await call('/info')).json()).remainingCharacters
+  expect(
+    (await finish((await start({ ...options, credentialMode: 'service' })).id)).completed,
+  ).toBe(1)
+  const after = (await (await call('/info')).json()).remainingCharacters
+  expect(before - after).toBe('A seed becomes a story'.length)
+})
+it('cancels pending transcription without publishing timings or replacing audio', async () => {
+  let ready!: () => void
+  const started = new Promise<void>((r) => {
+    ready = r
+  })
+  transport.mockImplementation(
+    async (_url, init) =>
+      new Promise((_resolve, reject) => {
+        ready()
+        init!.signal!.addEventListener('abort', () => reject(new Error('cancelled')))
+      }),
+  )
+  const original = (await entries()).find((e) => e.language === 'en' && e.id === 'pg001_h')!
+  const job = await start({
+    operation: 'timestamps',
+    scope: 'selected',
+    ids: ['pg001_h'],
+    force: true,
+  })
+  await started
+  expect((await call(`/books/${bookId}/jobs/${job.id}/cancel`, 'POST', {})).status).toBe(200)
+  expect((await finish(job.id)).status).toBe('cancelled')
+  const current = (await entries()).find((e) => e.language === 'en' && e.id === 'pg001_h')!
+  expect(current).toEqual(original)
+})

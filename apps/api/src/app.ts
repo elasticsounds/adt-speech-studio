@@ -564,7 +564,9 @@ export async function createApp(options: { root: string; transport?: typeof fetc
   app.post('/api/books/:book/plan', bodyLimit({ maxSize: 2000000 }), async (c) => {
     const body = RunRequest.parse(await c.req.json()),
       state = await store.load(owner(c), c.req.param('book'))
-    return c.json(jobs.plan([...state.entries.values()], body))
+    return c.json(
+      await jobs.plan([...state.entries.values()], body, store.dir(owner(c), c.req.param('book'))),
+    )
   })
   app.post('/api/books/:book/jobs', bodyLimit({ maxSize: 2000000 }), async (c) => {
     const body = RunRequest.parse(await c.req.json())

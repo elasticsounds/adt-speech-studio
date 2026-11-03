@@ -10,6 +10,9 @@ import {
   type CallLog,
 } from '@speech/types'
 import { Store } from './store.js'
+import { hasWordTimings } from '../../../packages/bundle/src/timings.js'
+import { TIMESTAMP_MODEL } from '../../../packages/tts/src/timestamps.js'
+import { runTimestampJob, estimateTimestampCost } from './timestamp-job.js'
 import { estimateSpeechCost } from './speech-cost.js'
 import {
   atomicJson,
@@ -82,7 +85,7 @@ export class Jobs {
             await this.store.saveJob(job)
           }
   }
-  plan(entries: Entry[], request: RunRequest): RunPlan {
+  async plan(entries: Entry[], request: RunRequest, dir: string): Promise<RunPlan> {
     const ids: string[] = []
     const planned: Entry[] = []
     let protectedCount = 0,
@@ -102,15 +105,32 @@ export class Jobs {
           protectedCount++
           continue
         }
+      } else if (request.operation === 'timestamps') {
+        if (!audio?.exists || audio.stale) continue
+        if (request.scope === 'missing' && hasWordTimings(e, request.slot)) continue
+        if (audio.timings?.source === 'manual' && !request.replaceManual) {
+          protectedCount++
+          continue
+        }
       } else {
-        if (request.scope === 'missing' && audio?.exists) continue
+        if (
+          request.scope === 'missing' &&
+          audio?.exists &&
+          !(request.settings.wordHighlighting && !hasWordTimings(e, request.slot))
+        )
+          continue
         if (
           request.scope === 'outdated' &&
           audio?.exists &&
-          audio.signature === speechSignature(e.speechText, request.settings, e.language)
+          audio.signature === speechSignature(e.speechText, request.settings, e.language) &&
+          (!request.settings.wordHighlighting || hasWordTimings(e, request.slot))
         )
           continue
-        if (audio?.source === 'manual' && !request.replaceManual) {
+        if (
+          (audio?.source === 'manual' ||
+            (request.settings.wordHighlighting && audio?.timings?.source === 'manual')) &&
+          !request.replaceManual
+        ) {
           protectedCount++
           continue
         }
@@ -119,7 +139,9 @@ export class Jobs {
       planned.push(e)
       const normalizing =
         request.operation === 'normalize' ||
-        (request.settings.normalize && (!e.manualSpeech || request.replaceManual))
+        (request.operation === 'speech' &&
+          request.settings.normalize &&
+          (!e.manualSpeech || request.replaceManual))
       characters += (normalizing ? e.text : e.speechText).trim().length
     }
     return {
@@ -128,6 +150,10 @@ export class Jobs {
       protected: protectedCount,
       muted,
       ids,
+      ...(request.operation === 'timestamps' ||
+      (request.operation === 'speech' && request.settings.wordHighlighting)
+        ? { timestampCost: await estimateTimestampCost(dir, planned, request) }
+        : {}),
       ...(request.operation === 'speech'
         ? {
             speechCost: estimateSpeechCost(planned, request.settings, request.replaceManual),
@@ -188,11 +214,27 @@ export class Jobs {
       if (request.operation === 'speech') validateSettings(request.settings)
       if (request.operation === 'speech' && !credentials[request.settings.provider])
         throw new Error('Enter an API key for the selected speech provider.')
-      if ((request.operation === 'normalize' || request.settings.normalize) && !credentials.openai)
+      if (
+        (request.operation === 'normalize' ||
+          (request.operation === 'speech' && request.settings.normalize)) &&
+        !credentials.openai
+      )
         throw new Error(
           'Text normalization needs an OpenAI API key. Add it in AI connection or configure the service OpenAI key.',
         )
-      const plan = this.plan([...state.entries.values()], request)
+      if (
+        (request.operation === 'timestamps' ||
+          (request.operation === 'speech' && request.settings.wordHighlighting)) &&
+        !credentials.openai
+      )
+        throw new Error(
+          'Word timestamps need an OpenAI API key. Add it in AI connection or configure the service OpenAI key.',
+        )
+      const plan = await this.plan(
+        [...state.entries.values()],
+        request,
+        this.store.dir(owner, bookId),
+      )
       if (!plan.count)
         throw new Error('No entries match this scope. Check your filters and protected recordings.')
       const now = new Date().toISOString()
@@ -212,8 +254,9 @@ export class Jobs {
         activeIds: [],
         results: [],
       }
-      for (const language of request.language === '*' ? state.book.languages : [request.language])
-        await this.store.saveSettings(owner, bookId, language, request.settings)
+      if (request.operation !== 'timestamps')
+        for (const language of request.language === '*' ? state.book.languages : [request.language])
+          await this.store.saveSettings(owner, bookId, language, request.settings)
       await this.store.saveJob(job)
       const controller = new AbortController()
       const record = { job, controller, promise: Promise.resolve(), finished: false }
@@ -275,14 +318,16 @@ export class Jobs {
           const state = await this.store.load(owner, bookId)
           let entry = state.entries.get(entryKey(language, textId))!
           await this.store.capacity(owner, 65536)
-          const beforeAttempt = async (n: number) => {
+          const beforeAttempt = async (n: number, characters = input.length) => {
             attempt = n
             signal.throwIfAborted()
-            if (request.credentialMode === 'service') await this.reserve(owner, input.length)
+            if (request.credentialMode === 'service') await this.reserve(owner, characters)
           }
           if (
             request.operation === 'normalize' ||
-            (request.settings.normalize && (!entry.manualSpeech || request.replaceManual))
+            (request.operation === 'speech' &&
+              request.settings.normalize &&
+              (!entry.manualSpeech || request.replaceManual))
           ) {
             operation = 'normalization'
             model = request.settings.normalizationModel
@@ -336,81 +381,116 @@ export class Jobs {
             job.results.push({ id, status: normalizationCached ? 'cached' : 'done' })
             continue
           }
-          operation = 'speech'
-          input = entry.speechText.trim()
-          model = request.settings.model
-          instructions = request.settings.instructions
-          const signature = speechSignature(input, request.settings, entry.language),
-            cached = path.join(dir, '.cache', 'audio', `${signature}.json`)
-          let file: string | undefined
-          let bytes = 0
-          let hit = false
-          if (!request.force && (await exists(cached))) {
-            const record = await jsonFile<{ file: string }>(cached),
-              candidate = path.join(dir, 'blobs', path.basename(record.file))
-            if (await exists(candidate)) {
-              try {
-                const audio = validWav(await fs.readFile(candidate))
-                file = candidate
-                bytes = audio.length
-                hit = true
-              } catch {
-                /* A damaged cache entry must be regenerated. */
+          let hit = true
+          const current = entry.audios[request.slot]
+          const reuseAudio =
+            request.settings.wordHighlighting &&
+            !request.force &&
+            current?.exists &&
+            !current.stale &&
+            (request.scope === 'missing' ||
+              current.signature ===
+                speechSignature(entry.speechText.trim(), request.settings, entry.language))
+          if (request.operation === 'speech' && !reuseAudio) {
+            hit = false
+            operation = 'speech'
+            input = entry.speechText.trim()
+            model = request.settings.model
+            instructions = request.settings.instructions
+            const signature = speechSignature(input, request.settings, entry.language),
+              cached = path.join(dir, '.cache', 'audio', `${signature}.json`)
+            let file: string | undefined
+            let bytes = 0
+            if (!request.force && (await exists(cached))) {
+              const record = await jsonFile<{ file: string }>(cached),
+                candidate = path.join(dir, 'blobs', path.basename(record.file))
+              if (await exists(candidate)) {
+                try {
+                  const audio = validWav(await fs.readFile(candidate))
+                  file = candidate
+                  bytes = audio.length
+                  hit = true
+                } catch {
+                  /* A damaged cache entry must be regenerated. */
+                }
               }
             }
+            if (!file) {
+              const audio = await synthesize(
+                input,
+                request.settings,
+                credentials[request.settings.provider]!,
+                signal,
+                this.transport,
+                beforeAttempt,
+              )
+              signal.throwIfAborted()
+              file = path.join(dir, 'blobs', `${hash(audio)}.wav`)
+              bytes = audio.length
+              await this.store.exclusive('storage-admission', async () => {
+                await this.store.capacity(owner, bytes + 65536)
+                await fs.mkdir(path.dirname(file!), { recursive: true })
+                await fs.writeFile(file!, audio, { flag: 'wx', mode: 0o600 }).catch((e) => {
+                  if (e.code !== 'EEXIST') throw e
+                })
+              })
+              await atomicJson(cached, { file: path.basename(file) })
+            }
+            signal.throwIfAborted()
+            const audio = {
+              file: path.relative(dir, file),
+              exportName: `tts-${path.basename(file)}`,
+              source: 'generated' as const,
+              exists: true,
+              signature,
+              textHash: hash(input),
+              provider: request.settings.provider,
+              model: request.settings.model,
+              voice: request.settings.voice,
+              createdAt: new Date().toISOString(),
+              bytes,
+            }
+            entry = await this.store.revise(
+              owner,
+              bookId,
+              entry.language,
+              textId,
+              entry.version,
+              { audios: { ...entry.audios, [request.slot]: audio } },
+              hit ? 'Reused cached recording' : 'Generated recording',
+              signal,
+            )
+            await log(hit ? 'cached' : 'done', `WAV ${bytes} bytes; ${path.basename(file)}`)
           }
-          if (!file) {
-            const audio = await synthesize(
-              input,
-              request.settings,
-              credentials[request.settings.provider]!,
+          if (request.operation === 'timestamps' || request.settings.wordHighlighting) {
+            operation = 'timestamps'
+            model = TIMESTAMP_MODEL
+            input = entry.speechText
+            attempt = 0
+            instructions = `Transcribe the existing ${request.slot} recording for word timestamps.`
+            const result = await runTimestampJob(
+              this.store,
+              job,
+              entry,
+              credentials.openai!,
               signal,
               this.transport,
               beforeAttempt,
+              async (status, response, details) => {
+                instructions = details
+                await log(status, response)
+              },
             )
-            signal.throwIfAborted()
-            file = path.join(dir, 'blobs', `${hash(audio)}.wav`)
-            bytes = audio.length
-            await this.store.exclusive('storage-admission', async () => {
-              await this.store.capacity(owner, bytes + 65536)
-              await fs.mkdir(path.dirname(file!), { recursive: true })
-              await fs.writeFile(file!, audio, { flag: 'wx', mode: 0o600 }).catch((e) => {
-                if (e.code !== 'EEXIST') throw e
-              })
-            })
-            await atomicJson(cached, { file: path.basename(file) })
+            hit = hit && result.cached
           }
-          signal.throwIfAborted()
-          const audio = {
-            file: path.relative(dir, file),
-            exportName: `tts-${path.basename(file)}`,
-            source: 'generated' as const,
-            exists: true,
-            signature,
-            textHash: hash(input),
-            provider: request.settings.provider,
-            model: request.settings.model,
-            voice: request.settings.voice,
-            createdAt: new Date().toISOString(),
-            bytes,
-          }
-          await this.store.revise(
-            owner,
-            bookId,
-            entry.language,
-            textId,
-            entry.version,
-            { audios: { ...entry.audios, [request.slot]: audio } },
-            hit ? 'Reused cached recording' : 'Generated recording',
-          )
           job.completed++
           if (hit) job.cached++
           job.results.push({ id, status: hit ? 'cached' : 'done' })
-          await log(hit ? 'cached' : 'done', `WAV ${bytes} bytes; ${path.basename(file)}`)
         } catch (e) {
           if (signal.aborted) break
           const message = redact(
-            e instanceof Error ? e.message : 'Generation failed.',
+            (operation === 'timestamps' ? 'Recording kept; word timestamps failed: ' : '') +
+              (e instanceof Error ? e.message : 'Generation failed.'),
             Object.values(credentials).filter(Boolean) as string[],
           )
           job.failed++
