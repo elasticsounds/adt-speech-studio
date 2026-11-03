@@ -82,6 +82,7 @@ async function entries() {
   return ((await (await call(`/books/${bookId}`)).json()) as BookDetail).entries
 }
 beforeEach(async () => {
+  process.env.PUBLIC_WEB_URL = 'https://pages.example/adt-speech-studio/'
   process.env.PROVIDER_INTERVAL_MS = '0'
   process.env.SERVICE_DAILY_CHARACTERS = '0'
   root = await fs.mkdtemp(path.join(os.tmpdir(), 'speech-api-'))
@@ -98,6 +99,7 @@ beforeEach(async () => {
 afterEach(async () => {
   await system.jobs.stop()
   await fs.rm(root, { recursive: true, force: true })
+  delete process.env.PUBLIC_WEB_URL
   delete process.env.SERVICE_DAILY_CHARACTERS
   delete process.env.MAX_OWNER_BYTES
   delete process.env.MAX_STORAGE_BYTES
@@ -434,4 +436,76 @@ it('bounds total in-flight entries even when a job requests three workers', asyn
   const done = await finish((await start({ scope: 'all', concurrency: 3 })).id)
   expect(done.completed).toBe(6)
   expect(maximum).toBe(2)
+})
+
+it('connects a static frontend using a separate bearer session and exact CORS origin', async () => {
+  expect((await system.app.request('/?connect=1')).headers.get('Cross-Origin-Opener-Policy')).toBe(
+    'unsafe-none',
+  )
+  expect((await system.app.request('/')).headers.get('Cross-Origin-Opener-Policy')).toBe(
+    'same-origin',
+  )
+  const response = await call(
+    '/auth/connect',
+    'POST',
+    { state: '7e92d38c-9425-4f1e-a098-e90127fd93a3' },
+    cookie,
+    { Origin: 'http://localhost' },
+  )
+  expect(response.status).toBe(200)
+  const { token, origin } = (await response.json()) as { token: string; origin: string }
+  expect(origin).toBe('https://pages.example')
+  const headers = { Origin: origin, Authorization: `Bearer ${token}` }
+  const books = await call('/books', 'GET', undefined, '', headers)
+  expect(books.status).toBe(200)
+  expect(books.headers.get('Access-Control-Allow-Origin')).toBe(origin)
+  expect(await books.json()).toHaveLength(1)
+  // Frontend requests must not fall back to first-party cookies or invalid bearer tokens.
+  expect((await call('/books', 'GET', undefined, cookie, { Origin: origin })).status).toBe(401)
+  expect(
+    (
+      await call('/books', 'GET', undefined, cookie, {
+        Origin: origin,
+        Authorization: 'Bearer invalid',
+      })
+    ).status,
+  ).toBe(401)
+  await call('/auth/logout', 'POST', {}, '', headers)
+  expect((await call('/books', 'GET', undefined, '', headers)).status).toBe(401)
+  expect((await call('/books')).status).toBe(200)
+})
+it('rejects foreign-origin grants/password forms and exposes CORS only to the configured frontend', async () => {
+  const response = await call(
+    '/auth/connect',
+    'POST',
+    { state: '7e92d38c-9425-4f1e-a098-e90127fd93a3' },
+    cookie,
+    { Origin: 'https://pages.example' },
+  )
+  expect(response.status).toBeGreaterThanOrEqual(400)
+  expect(
+    (
+      await call(
+        '/auth/login',
+        'POST',
+        { username: 'tester', password: 'test-password-long-enough' },
+        '',
+        { Origin: 'https://pages.example' },
+      )
+    ).status,
+  ).toBe(403)
+  const preflight = await call('/books', 'OPTIONS', undefined, '', {
+    Origin: 'https://pages.example',
+    'Access-Control-Request-Method': 'POST',
+    'Access-Control-Request-Headers': 'authorization,x-requested-with',
+  })
+  expect(preflight.status).toBe(204)
+  expect(preflight.headers.get('Access-Control-Allow-Headers')?.toLowerCase()).toContain(
+    'authorization',
+  )
+  const foreign = await call('/books', 'OPTIONS', undefined, '', {
+    Origin: 'https://attacker.invalid',
+    'Access-Control-Request-Method': 'POST',
+  })
+  expect(foreign.headers.get('Access-Control-Allow-Origin')).toBeNull()
 })

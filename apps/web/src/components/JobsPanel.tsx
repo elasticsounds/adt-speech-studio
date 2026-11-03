@@ -1,3 +1,5 @@
+import { apiUrl } from '../hosting'
+import { FileLink } from './FileLink'
 import { useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { LoaderCircle, CircleCheck, AlertCircle, List, Square } from 'lucide-react'
@@ -117,12 +119,13 @@ export function JobsPanel({
           <p className="mb-4 text-sm text-stone-500">
             Recent requests and outcomes for this job. API credentials are excluded.
           </p>
-          <a
+          <FileLink
+            filename="generation-log.jsonl"
             className="mb-4 inline-flex text-xs font-medium text-emerald-800 underline"
-            href={`/api/books/${book}/jobs/${job.id}/logs?download=1`}
+            href={apiUrl(`/books/${book}/jobs/${job.id}/logs?download=1`)}
           >
             Download complete log
-          </a>
+          </FileLink>
           <ErrorNotice error={logs.error} />
           <div className="space-y-3">
             {logs.data?.length ? (

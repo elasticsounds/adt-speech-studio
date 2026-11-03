@@ -1,3 +1,4 @@
+import { SOURCE_URL } from '../hosting'
 import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { ArrowRight, Check, FileAudio, ShieldCheck, Sparkles } from 'lucide-react'
@@ -194,7 +195,7 @@ export function AuthScreen({ onSignedIn }: { onSignedIn: () => void }) {
           <p className="mt-12 text-center text-[11px] leading-5 text-stone-400">
             AI-generated speech can make mistakes. Review recordings before sharing.
             <br />
-            <a href="/source.zip" className="underline">
+            <a href={SOURCE_URL} className="underline">
               Application source · AGPL-3.0
             </a>
           </p>

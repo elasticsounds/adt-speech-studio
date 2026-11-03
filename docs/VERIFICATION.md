@@ -2,9 +2,9 @@
 
 ## Automated
 
-- `pnpm test`: 40 passing tests across provider contracts, streaming WAV handling, ZIP security/preservation, account isolation, CSRF, recovery, immutable history, cancellation, cache behavior, quotas, manual protection, normalization, secondary narration and interrupted-job recovery.
+- `pnpm test`: 42 passing tests across provider contracts, streaming WAV handling, ZIP security/preservation, account isolation, CSRF, recovery, exact-origin CORS and separate bearer sessions, immutable history, cancellation, cache behavior, quotas, manual protection, normalization, secondary narration and interrupted-job recovery.
 - `pnpm build`: strict TypeScript compilation, Vite frontend and esbuild API production build passed.
-- `pnpm test:e2e`: desktop workflow, mobile workspace layout and mobile sign-in passed in Chromium. Desktop covers sign-up, import, inspection, speech edit, key connection, missing generation, voice change, all-language generation, playback, search and downloaded ZIP contents. The test provider is mocked and absent from the production bundle.
+- `pnpm test:e2e`: three Chromium tests passed: the desktop workflow (including mobile workspace layout), mobile sign-in, and the separate-origin GitHub Pages workflow. Desktop covers sign-up, import, inspection, speech edit, key connection, missing generation, voice change, all-language generation, playback, search and downloaded ZIP contents. The test provider is mocked and absent from the production bundle.
 
 - `pnpm audit --prod`: no known vulnerabilities. Zod was upgraded to 4.6.7 after the audit identified CVE-2023-54404 in the initial version.
 
@@ -33,3 +33,9 @@ The first deployment exposed an upload-admission bug caused by scanning the volu
 ## Operating boundaries
 
 One API process and persistent volume are required. The initial deployment uses private accounts with personal keys and disables shared service-funded calls. No new word alignment, translation generation, additional language creation or full Studio project import is included. See README for retention, backup and quota behavior.
+
+## GitHub Pages follow-up
+
+The local Pages build is served under `/adt-speech-studio/` on a different hostname from the API. Its browser test signs up in a first-party popup, grants a separate session, deletes backend cookies, reloads, uploads a reader, plays authenticated audio, generates missing speech with the mock provider, downloads original and updated ZIPs, and signs out. No browser page errors occurred. API tests reject foreign-origin password/grant requests, cookie fallback and revoked bearer sessions. A regression assertion ensures only the connect document relaxes opener isolation.
+
+The Pages production workflow rebuilds after browser tests so the published JavaScript points to the live Fly backend, never the local mock server. Live Pages verification is recorded after deployment.

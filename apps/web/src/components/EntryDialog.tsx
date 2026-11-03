@@ -1,3 +1,5 @@
+import { FileLink } from './FileLink'
+import { Recording } from './Recording'
 import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Download, History, Upload, Save, RotateCcw } from 'lucide-react'
@@ -133,11 +135,15 @@ export function EntryDialog({
         </p>
         {entry.audios[slot]?.exists ? (
           <div className="flex flex-wrap items-center gap-3">
-            <audio controls src={audioUrl(book, entry, slot)} className="h-9 max-w-full" />
-            <a href={audioUrl(book, entry, slot, true)} className="btn btn-secondary text-xs">
+            <Recording controls src={audioUrl(book, entry, slot)} className="h-9 max-w-full" />
+            <FileLink
+              filename="recording.wav"
+              href={audioUrl(book, entry, slot, true)}
+              className="btn btn-secondary text-xs"
+            >
               <Download size={14} />
               Download
-            </a>
+            </FileLink>
           </div>
         ) : (
           <p className="text-sm text-stone-500">
@@ -196,7 +202,7 @@ export function EntryDialog({
                     {version.speechText}
                   </p>
                   {version.audios[slot]?.exists && (
-                    <audio
+                    <Recording
                       className="mt-2 h-7 max-w-full"
                       controls
                       preload="none"

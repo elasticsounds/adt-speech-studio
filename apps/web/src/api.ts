@@ -1,3 +1,4 @@
+import { fetchApi, apiUrl, REMOTE_API, sessionToken, setSessionToken } from './hosting'
 import type {
   Credentials,
   BookSummary,
@@ -18,7 +19,7 @@ async function request<T>(url: string, options: RequestInit = {}, keys?: Credent
     headers.set('Content-Type', 'application/json')
   if (keys?.gemini) headers.set('X-Gemini-API-Key', keys.gemini)
   if (keys?.openai) headers.set('X-OpenAI-Key', keys.openai)
-  const response = await fetch(`/api${url}`, { ...options, headers, credentials: 'same-origin' })
+  const response = await fetchApi(url, { ...options, headers })
   const data = await response
     .json()
     .catch(() => ({ error: 'The server returned an unexpected response.' }))
@@ -28,10 +29,15 @@ async function request<T>(url: string, options: RequestInit = {}, keys?: Credent
 const post = <T>(url: string, body: unknown, keys?: Credentials) =>
   request<T>(url, { method: 'POST', body: JSON.stringify(body) }, keys)
 export const api = {
-  me: () => request<{ user: PublicUser | null }>('/auth/me'),
+  me: () =>
+    REMOTE_API && !sessionToken()
+      ? Promise.resolve({ user: null })
+      : request<{ user: PublicUser | null }>('/auth/me'),
   auth: (mode: string, body: unknown) =>
     post<{ user: PublicUser; recoveryCode?: string }>(`/auth/${mode}`, body),
-  logout: () => post('/auth/logout', {}),
+  logout: () => post('/auth/logout', {}).finally(() => setSessionToken(null)),
+  connect: (state: string) =>
+    post<{ token: string; origin: string; state: string }>('/auth/connect', { state }),
   info: () => request<ServerInfo>('/info'),
   books: () => request<BookSummary[]>('/books'),
   book: (id: string) => request<BookDetail>(`/books/${id}`),
@@ -61,4 +67,6 @@ export const api = {
   files: (book: string) => request<string[]>(`/books/${book}/files`),
 }
 export const audioUrl = (book: string, entry: Entry, slot = 'primary', download = false) =>
-  `/api/books/${book}/audio?${new URLSearchParams({ language: entry.language, id: entry.id, slot, version: String(entry.version), ...(download ? { download: '1' } : {}) })}`
+  apiUrl(
+    `/books/${book}/audio?${new URLSearchParams({ language: entry.language, id: entry.id, slot, version: String(entry.version), ...(download ? { download: '1' } : {}) })}`,
+  )

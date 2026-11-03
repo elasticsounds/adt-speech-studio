@@ -1,3 +1,5 @@
+import { REMOTE_API, SOURCE_URL } from './hosting'
+import { HostedSignIn, ConnectionGrant } from './components/HostedSignIn'
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { BookOpen, KeyRound, LogOut, ChevronRight, ExternalLink } from 'lucide-react'
@@ -38,6 +40,14 @@ export default function App() {
         <Logo />
       </div>
     )
+  if (!me.data?.user && REMOTE_API)
+    return (
+      <HostedSignIn
+        onSignedIn={() => {
+          void client.invalidateQueries({ queryKey: ['me'] })
+        }}
+      />
+    )
   if (!me.data?.user)
     return (
       <AuthScreen
@@ -46,6 +56,8 @@ export default function App() {
         }}
       />
     )
+  if (!REMOTE_API && new URLSearchParams(location.search).get('connect') === '1')
+    return <ConnectionGrant username={me.data.user.username} />
   const current = books.data?.find((b) => b.id === book)
   return (
     <div className="min-h-screen bg-[#f7f8f5]">
@@ -87,7 +99,7 @@ export default function App() {
           </p>
         </div>
         <a
-          href="/source.zip"
+          href={SOURCE_URL}
           className="mt-4 flex items-center gap-1.5 px-2 text-[10px] text-stone-400"
         >
           Source code · AGPL-3.0 <ExternalLink size={10} />

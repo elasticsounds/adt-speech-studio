@@ -14,10 +14,11 @@
     "start": "node dist/api/server.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:e2e": "playwright test",
+    "test:e2e": "node scripts/build-pages.mjs --test && playwright test",
     "fixture": "tsx scripts/fixture.ts",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "build:pages": "node scripts/build-pages.mjs"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.6",

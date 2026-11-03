@@ -9,10 +9,18 @@ export default defineConfig({
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },
-  webServer: {
-    command: 'pnpm exec tsx tests/browser/server.ts',
-    url: 'http://127.0.0.1:55023/api/health',
-    reuseExistingServer: false,
-    timeout: 30000,
-  },
+  webServer: [
+    {
+      command: 'pnpm exec tsx tests/browser/server.ts',
+      url: 'http://127.0.0.1:55023/api/health',
+      reuseExistingServer: false,
+      timeout: 30000,
+    },
+    {
+      command: 'pnpm exec tsx tests/browser/pages-server.ts',
+      url: 'http://localhost:55024/adt-speech-studio/',
+      reuseExistingServer: false,
+      timeout: 30000,
+    },
+  ],
 })
