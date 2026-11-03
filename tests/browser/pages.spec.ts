@@ -48,9 +48,7 @@ test('GitHub Pages layout uses first-party sign-in and bearer-only upload, audio
   await page.getByRole('button', { name: 'Generate missing', exact: true }).click()
   await page.getByRole('button', { name: 'Confirm paid generation', exact: true }).click()
   // Wait for the new speech job, not the previous normalization completion.
-  await expect(
-    page.getByText('gemini-3.8-flash-lite-tts · Kore · en', { exact: true }),
-  ).toBeVisible()
+  await expect(page.getByText('gemini-3.8-flash-tts · Kore · en', { exact: true })).toBeVisible()
   await expect(page.getByText('Generation finished', { exact: true })).toBeVisible()
   const download = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Download ADT', exact: true }).click()

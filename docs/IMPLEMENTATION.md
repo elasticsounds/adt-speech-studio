@@ -26,7 +26,7 @@ Legacy Gemini and previous `gpt-4.1-mini` default selections resolve to the Open
 
 ## Speech cost confirmation — owner-requested amendment (issue #9)
 
-Default new settings to `gemini-3.8-flash-lite-tts`, preserving saved model choices and historical data. All speech entry points (missing, all, selected, individual and retry) require a confirmation showing the chosen model/voice, count/characters and estimated USD speech cost. Cancel does not start a job. Read-only plans calculate the estimate using the exact eligible entries after scope/manual/mute exclusions.
+Default new settings to `gemini-3.8-flash-tts`, preserving saved model choices and historical data. The owner initially selected Lite, then requested full Flash again on 2026-11-03 for Albanian support; Lite remains optional. All speech entry points (missing, all, selected, individual and retry) require a confirmation showing the chosen model/voice, count/characters and estimated USD speech cost. Cancel does not start a job. Read-only plans calculate the estimate using the exact eligible entries after scope/manual/mute exclusions.
 
 The range assumes fresh generation at published standard paid rates, approximate input tokenization and audio duration, with per-clip pause allowances. Rates link to provider documentation, expose their verification date and apply the announced Gemini promotion expiry. Unknown estimates are explicitly unavailable, never zero; GPT-4o Mini TTS exposes its token rates without guessing an undocumented audio-duration conversion. Normalization can change length and its charge is excluded, as are retries and taxes. No estimate is a billing cap. Service credentials carry the same charge notice as personal credentials.
 

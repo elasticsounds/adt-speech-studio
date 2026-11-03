@@ -5,7 +5,7 @@ export type Provider = z.infer<typeof Provider>
 export const VoiceSlot = z.enum(['primary', 'secondary'])
 export type VoiceSlot = z.infer<typeof VoiceSlot>
 export const DEFAULT_NORMALIZATION_MODEL = 'gpt-6-luna'
-export const DEFAULT_SPEECH_MODEL = 'gemini-3.8-flash-lite-tts'
+export const DEFAULT_SPEECH_MODEL = 'gemini-3.8-flash-tts'
 export const Settings = z.object({
   provider: Provider.default('gemini'),
   model: z
@@ -36,7 +36,7 @@ export type Settings = z.infer<typeof Settings>
 export const DEFAULT_SETTINGS = Settings.parse({})
 export const GEMINI_MODELS = [
   DEFAULT_SPEECH_MODEL,
-  'gemini-3.8-flash-tts',
+  'gemini-3.8-flash-lite-tts',
   'gemini-3.1-flash-tts-preview',
   'gemini-2.5-pro-preview-tts',
   'gemini-2.5-flash-preview-tts',

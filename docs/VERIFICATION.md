@@ -71,3 +71,7 @@ Targeted regressions reproduced overlapping recovery requests interfering with c
 The upstream ADT reader at commit `884d5b16985bcecc64b5031cb23d65bbaf732dde` passes 35 targeted tests in `word-highlight.test.ts`, `tokenizer.test.ts` and `useAudioPlayer.test.ts`. Code inspection confirms Settings → Highlight → Word is available when read-aloud subsettings are shown; `resolveWordTimestamps` uses precise data first and approximate duration-based timing otherwise. Easy Read may fall back to block highlighting when displayed and spoken words differ. This does not establish that every older uploaded reader exposes the same control, and no new precise alignment is generated.
 
 Provider rates were checked against official pricing documentation on 2026-11-03. Estimates are not measured billing or a spending cap. OpenAI GPT-4o Mini TTS exposes its published token rates but reports the estimate unavailable because an authoritative audio-duration conversion was not established. Live deployment evidence is recorded in PR #10 after deployment; local tests mock provider calls.
+
+### Full Flash restored as the default
+
+At the owner's request on 2026-11-03, new settings and Gemini provider selection again default to `gemini-3.8-flash-tts` for Albanian support. Explicit saved choices remain unchanged and Lite stays selectable. The cost confirmation continues to use the selected model's rates. All 69 unit/API tests, three browser workflows, build and formatting checks pass with the full Flash default.

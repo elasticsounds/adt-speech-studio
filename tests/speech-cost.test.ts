@@ -14,10 +14,12 @@ const entry = (characters = 1000) =>
   })
 const date = new Date('2026-12-31T23:59:59Z')
 
-it('defaults new settings and provider switching to Lite without replacing explicit models', () => {
-  expect(Settings.parse({}).model).toBe('gemini-3.8-flash-lite-tts')
+it('defaults new settings and provider switching to full Flash without replacing explicit models', () => {
+  expect(Settings.parse({}).model).toBe('gemini-3.8-flash-tts')
   expect(GEMINI_MODELS[0]).toBe(DEFAULT_SETTINGS.model)
-  expect(Settings.parse({ model: 'gemini-3.8-flash-tts' }).model).toBe('gemini-3.8-flash-tts')
+  expect(Settings.parse({ model: 'gemini-3.8-flash-lite-tts' }).model).toBe(
+    'gemini-3.8-flash-lite-tts',
+  )
 })
 
 it.each([
