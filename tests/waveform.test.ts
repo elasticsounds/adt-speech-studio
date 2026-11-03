@@ -15,3 +15,13 @@ it('highlights only the word at the seek/playback time, including gaps and clip 
   expect(activeWord(words, 0.3)).toBe(1)
   expect(activeWord(words, 0.7)).toBe(-1)
 })
+
+it('tolerates media-clock rounding at real Whisper word boundaries', () => {
+  const words = [
+    { start: 0, end: 0.699999988079071 },
+    { start: 0.699999988079071, end: 1.100000023841858 },
+  ]
+  expect(activeWord(words, 0.699999)).toBe(1)
+  expect(activeWord(words, 0.65)).toBe(0)
+  expect(activeWord(words, 1.1)).toBe(-1)
+})

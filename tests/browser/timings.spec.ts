@@ -60,6 +60,8 @@ test('timestamp-only confirmation, word playback, seeking and exported reader ti
   await page.getByRole('button', { name: 'Play recording', exact: true }).click()
   await expect(second).toHaveAttribute('aria-current', 'true', { timeout: 4000 })
   await page.getByRole('button', { name: 'Pause recording', exact: true }).click()
+  await second.click()
+  await expect(second).toHaveAttribute('aria-current', 'true')
   await first.click()
   await expect(first).toHaveAttribute('aria-current', 'true')
   await page.getByLabel('Highlight each word during playback').uncheck()
