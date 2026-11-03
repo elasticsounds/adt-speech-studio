@@ -1,4 +1,6 @@
 import { z } from 'zod'
+import { TimingReference } from './timings.js'
+export { WordTiming, WordTimings, TimingReference, TimingEdit } from './timings.js'
 
 export const Provider = z.enum(['gemini', 'openai'])
 export type Provider = z.infer<typeof Provider>
@@ -91,6 +93,7 @@ export const OPENAI_VOICES = [
 ]
 
 export const AudioRecord = z.object({
+  timings: TimingReference.optional(),
   file: z.string(),
   exportName: z.string(),
   source: z.enum(['imported', 'generated', 'manual']),

@@ -4,6 +4,7 @@ import { parseHTML } from 'linkedom'
 import { z } from 'zod'
 import { Book, Entry, type AudioRecord } from '@speech/types'
 import { exists, filesUnder, inside, jsonFile, hash } from './files.js'
+import { hydrateImportedTimings } from './timings.js'
 
 const StringMap = z.record(z.string().max(512), z.string().max(100000))
 export function plainText(text: string): string {
@@ -133,5 +134,6 @@ export async function readCatalog(
         ? config.title.slice(0, 500)
         : meta.fileName.replace(/\.zip$/i, ''),
   })
+  await hydrateImportedTimings(bookDir, book, entries)
   return { book, entries }
 }

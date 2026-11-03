@@ -2,7 +2,16 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
-import { Book, Entry, Job, Settings, type BookSummary } from '@speech/types'
+import {
+  Book,
+  Entry,
+  Job,
+  Settings,
+  type BookSummary,
+  type WordTimings,
+  type VoiceSlot,
+} from '@speech/types'
+import { hydrateImportedTimings, writeWordTimings } from '../../../packages/bundle/src/timings.js'
 import {
   atomicJson,
   directoryBytes,
@@ -83,6 +92,7 @@ export class Store {
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e
     }
+    await hydrateImportedTimings(dir, book, [...entries.values()])
     const state = { book, entries }
     this.loaded.set(key, state)
     this.trimCache()
@@ -184,6 +194,7 @@ export class Store {
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e
     }
+    await hydrateImportedTimings(dir, (await this.load(owner, id)).book, history)
     return history.sort((a, b) => b.version - a.version)
   }
   async settings(owner: string, id: string) {
@@ -237,6 +248,28 @@ export class Store {
     const audio = entry?.audios[slot]
     if (!audio?.exists) throw new Error('Recording not found.')
     return inside(this.dir(owner, id), audio.file)
+  }
+  async saveTimings(
+    owner: string,
+    id: string,
+    entry: Entry,
+    slot: VoiceSlot,
+    timings: WordTimings,
+    source: 'generated' | 'manual',
+  ) {
+    const ref = await this.exclusive('storage-admission', async () => {
+      await this.capacity(owner, JSON.stringify(timings).length * 2 + 65536)
+      return writeWordTimings(this.dir(owner, id), entry, slot, timings, source)
+    })
+    return this.revise(
+      owner,
+      id,
+      entry.language,
+      entry.id,
+      entry.version,
+      { audios: { ...entry.audios, [slot]: { ...entry.audios[slot]!, timings: ref } } },
+      source === 'manual' ? 'Edited word timestamps' : 'Generated word timestamps',
+    )
   }
   async delete(owner: string, id: string) {
     await this.load(owner, id)

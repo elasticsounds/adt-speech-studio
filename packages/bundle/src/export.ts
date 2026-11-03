@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto'
 import type { Book, Entry } from '@speech/types'
 import { exists, filesUnder, inside, jsonFile, hash } from './files.js'
 import { zipFiles } from './archive.js'
+import { readWordTimings, readerTimecode } from './timings.js'
 
 /** Replace only the JSON literal in Studio's known preloader, never execute it. */
 export function refreshPreloader(source: string, changes: Map<string, Buffer>): string {
@@ -125,7 +126,30 @@ export async function exportBook(bookDir: string, book: Book, entries: Entry[]) 
     prune(timings, stale.primary)
     if (voiceTimings.primary) prune(voiceTimings.primary, stale.primary)
     if (voiceTimings.secondary) prune(voiceTimings.secondary, stale.secondary)
-    hasTiming ||= Object.keys(timings).length > 0
+    for (const entry of entries.filter((e) => e.language === lang && !e.muted)) {
+      for (const slot of ['primary', 'secondary'] as const) {
+        if (entry.audios[slot]?.timings?.format !== 'speech') continue
+        const data = await readWordTimings(bookDir, entry, slot)
+        if (!data) continue
+        voiceTimings[slot] ??= {}
+        const value = readerTimecode(data)
+        Object.defineProperty(voiceTimings[slot], entry.id, {
+          value,
+          enumerable: true,
+          configurable: true,
+          writable: true,
+        })
+        if (slot === 'primary')
+          Object.defineProperty(timings, entry.id, {
+            value,
+            enumerable: true,
+            configurable: true,
+            writable: true,
+          })
+      }
+    }
+    hasTiming ||=
+      Object.keys(timings).length > 0 || Object.keys(voiceTimings.secondary ?? {}).length > 0
     write(`${base}/texts.json`, texts)
     write(`${base}/speech_texts.json`, speech)
     write(`${base}/audios.json`, primary)
@@ -149,9 +173,15 @@ export async function exportBook(bookDir: string, book: Book, entries: Entry[]) 
       }
       write(`${base}/audio_voices.json`, updated)
     }
-    if (await exists(inside(root, `${base}/timecode/timecode_output.json`)))
+    if (
+      Object.keys(timings).length ||
+      (await exists(inside(root, `${base}/timecode/timecode_output.json`)))
+    )
       write(`${base}/timecode/timecode_output.json`, timings)
-    if (await exists(inside(root, `${base}/timecode/timecode_voices.json`)))
+    if (
+      Object.keys(voiceTimings).length ||
+      (await exists(inside(root, `${base}/timecode/timecode_voices.json`)))
+    )
       write(`${base}/timecode/timecode_voices.json`, voiceTimings)
   }
   if (await exists(path.join(root, 'assets/config.json'))) {
