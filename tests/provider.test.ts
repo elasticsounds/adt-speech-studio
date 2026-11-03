@@ -7,7 +7,7 @@ import {
   pcmToWav,
   validWav,
 } from '../packages/tts/src/provider.js'
-import { tone } from './fixture.js'
+import { tone, normalizationPayload } from './fixture.js'
 
 beforeEach(() => {
   process.env.PROVIDER_INTERVAL_MS = '0'
@@ -90,19 +90,7 @@ describe('Speech provider contracts', () => {
     expect(fetcher).toHaveBeenCalledTimes(1)
   })
   it('normalizes text independently and retains full language guidance', async () => {
-    const fetcher = vi.fn(async () =>
-      Response.json({
-        candidates: [
-          {
-            content: {
-              parts: [
-                { text: JSON.stringify({ speechText: 'Twelve flowers', failureReason: null }) },
-              ],
-            },
-          },
-        ],
-      }),
-    )
+    const fetcher = vi.fn(async () => Response.json(normalizationPayload()))
     const output = await normalizeText(
       '12 flowers',
       'en',
@@ -113,6 +101,16 @@ describe('Speech provider contracts', () => {
     )
     expect(output.text).toBe('Twelve flowers')
     expect(output.prompt).toContain('Preserve the meaning.')
+    const [url, init] = fetcher.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toBe('https://api.openai.com/v1/responses')
+    expect(init.headers).toMatchObject({ Authorization: 'Bearer secret' })
+    expect(init.headers).not.toHaveProperty('x-goog-api-key')
+    const body = JSON.parse(init.body as string)
+    expect(body.model).toBe('gpt-6-luna')
+    expect(body.reasoning).toEqual({ effort: 'none' })
+    expect(body.store).toBe(false)
+    expect(body.text.format).toMatchObject({ type: 'json_schema', strict: true })
+    expect(body.text.format.schema.additionalProperties).toBe(false)
   })
   it('uses the existing OpenAI speech contract with WAV output', async () => {
     const fetcher = vi.fn(async () => new Response(new Uint8Array(tone)))
@@ -177,4 +175,49 @@ describe('Speech provider contracts', () => {
     ).rejects.toThrow()
     expect(fetcher).not.toHaveBeenCalled()
   })
+})
+
+it.each([
+  { status: 'incomplete', output: normalizationPayload().output },
+  {
+    status: 'completed',
+    output: [
+      {
+        type: 'message',
+        role: 'assistant',
+        content: [{ type: 'refusal', refusal: 'Cannot comply' }],
+      },
+    ],
+  },
+  normalizationPayload(null, 'Cannot preserve meaning'),
+  normalizationPayload('<math>x</math>'),
+  { status: 'completed', output: [] },
+])('rejects unusable OpenAI normalization output', async (payload) => {
+  await expect(
+    normalizeText(
+      '12 flowers',
+      'en',
+      DEFAULT_SETTINGS,
+      'secret',
+      new AbortController().signal,
+      async () => Response.json(payload),
+    ),
+  ).rejects.toThrow()
+})
+
+it('keeps explicitly pinned alternative OpenAI models compatible', async () => {
+  const fetcher = vi.fn(async () => Response.json(normalizationPayload()))
+  await normalizeText(
+    '12 flowers',
+    'en',
+    { ...DEFAULT_SETTINGS, normalizationModel: 'gpt-4.1-mini-2025-04-14' },
+    'secret',
+    new AbortController().signal,
+    fetcher,
+  )
+  const body = JSON.parse(
+    (fetcher.mock.calls[0] as unknown as [string, RequestInit])[1].body as string,
+  )
+  expect(body.model).toBe('gpt-4.1-mini-2025-04-14')
+  expect(body).not.toHaveProperty('reasoning')
 })

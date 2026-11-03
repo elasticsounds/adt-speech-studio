@@ -4,7 +4,7 @@ import path from 'node:path'
 import { serve } from '@hono/node-server'
 import { serveStatic } from '@hono/node-server/serve-static'
 import { createApp } from '../../apps/api/src/app.js'
-import { tone } from '../fixture.js'
+import { tone, normalizationPayload } from '../fixture.js'
 
 // This transport exists only in the test server; production bundles never import it.
 process.env.PROVIDER_INTERVAL_MS = '0'
@@ -14,24 +14,11 @@ const root = await fs.mkdtemp(path.join(os.tmpdir(), 'speech-browser-'))
 const { app, jobs } = await createApp({
   root,
   transport: async (_url, init) => {
-    const request = JSON.parse(init?.body as string)
-    if (request.generationConfig?.responseMimeType === 'application/json')
-      return Response.json({
-        candidates: [
-          {
-            content: {
-              parts: [
-                {
-                  text: JSON.stringify({
-                    speechText: 'A garden has twelve flowers.',
-                    failureReason: null,
-                  }),
-                },
-              ],
-            },
-          },
-        ],
-      })
+    if (String(_url) === 'https://api.openai.com/v1/responses') {
+      if ((init?.headers as Record<string, string>).Authorization !== 'Bearer pages-openai-key')
+        return new Response(null, { status: 401 })
+      return Response.json(normalizationPayload('A garden has twelve flowers.'))
+    }
     if (String(_url).endsWith('/interactions'))
       return Response.json({
         steps: [

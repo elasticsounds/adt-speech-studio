@@ -135,7 +135,7 @@ export function SettingsPanel({
                 Normalize before speech
               </span>
               <span className="mt-2 block text-xs leading-5 text-stone-500">
-                Prepare numbers, abbreviations and math for natural narration.
+                Prepare numbers, abbreviations and math with OpenAI.
               </span>
             </span>
             <input
@@ -152,7 +152,7 @@ export function SettingsPanel({
             Text preparation settings
           </summary>
           <div className="space-y-4 px-3 pb-4">
-            <Field label="Normalization model">
+            <Field label="Normalization model (OpenAI)">
               <input
                 className="input text-xs"
                 value={value.normalizationModel}
@@ -177,8 +177,8 @@ export function SettingsPanel({
               />
             </Field>
             <p className="text-xs leading-5 text-stone-500">
-              Normalization uses a Google/Gemini key and preserves your display text. Manually
-              edited speech is kept.
+              Normalization uses an OpenAI key and preserves your display text. Manually edited
+              speech is kept.
             </p>
           </div>
         </details>

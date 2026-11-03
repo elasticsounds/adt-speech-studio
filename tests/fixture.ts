@@ -116,3 +116,20 @@ export async function makeFixture(file: string, wrapper = '') {
   await zipFiles(file, fixtureFiles(wrapper))
   return file
 }
+
+export function normalizationPayload(
+  speechText: string | null = 'Twelve flowers',
+  failureReason: string | null = null,
+) {
+  return {
+    status: 'completed',
+    output: [
+      { type: 'reasoning', summary: [] },
+      {
+        type: 'message',
+        role: 'assistant',
+        content: [{ type: 'output_text', text: JSON.stringify({ speechText, failureReason }) }],
+      },
+    ],
+  }
+}

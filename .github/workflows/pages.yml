@@ -1,7 +1,7 @@
 name: Publish GitHub Pages
 on:
   push:
-    branches: [github-pages, main]
+    branches: [openai-normalization, github-pages, main]
   workflow_dispatch:
 concurrency:
   group: github-pages

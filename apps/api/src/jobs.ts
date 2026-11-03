@@ -20,6 +20,7 @@ import {
 import { entryKey } from '../../../packages/bundle/src/catalog.js'
 import {
   normalizeText,
+  openAINormalizationSettings,
   normalizationPrompt,
   NORMALIZATION_VERSION,
   redact,
@@ -154,6 +155,7 @@ export class Jobs {
     )
   }
   async start(owner: string, bookId: string, request: RunRequest, credentials: Credentials) {
+    request = { ...request, settings: openAINormalizationSettings(request.settings) }
     return this.store.exclusive('job-admission', async () => {
       await this.settle(bookId)
       if ([...this.active.values()].some((v) => v.job.ownerId === owner && !v.finished))
@@ -166,11 +168,13 @@ export class Jobs {
       const state = await this.store.load(owner, bookId)
       if (request.language !== '*' && !state.book.languages.includes(request.language))
         throw new Error('Language not found.')
-      validateSettings(request.settings)
+      if (request.operation === 'speech') validateSettings(request.settings)
       if (request.operation === 'speech' && !credentials[request.settings.provider])
         throw new Error('Enter an API key for the selected speech provider.')
-      if ((request.operation === 'normalize' || request.settings.normalize) && !credentials.gemini)
-        throw new Error('Text normalization needs a Google/Gemini API key.')
+      if ((request.operation === 'normalize' || request.settings.normalize) && !credentials.openai)
+        throw new Error(
+          'Text normalization needs an OpenAI API key. Add it in AI connection or configure the service OpenAI key.',
+        )
       const plan = this.plan([...state.entries.values()], request)
       if (!plan.count)
         throw new Error('No entries match this scope. Check your filters and protected recordings.')
@@ -284,7 +288,7 @@ export class Jobs {
                 entry.text,
                 entry.language,
                 request.settings,
-                credentials.gemini!,
+                credentials.openai!,
                 signal,
                 this.transport,
                 beforeAttempt,
