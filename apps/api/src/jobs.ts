@@ -10,6 +10,7 @@ import {
   type CallLog,
 } from '@speech/types'
 import { Store } from './store.js'
+import { estimateSpeechCost } from './speech-cost.js'
 import {
   atomicJson,
   directoryBytes,
@@ -83,6 +84,7 @@ export class Jobs {
   }
   plan(entries: Entry[], request: RunRequest): RunPlan {
     const ids: string[] = []
+    const planned: Entry[] = []
     let protectedCount = 0,
       muted = 0,
       characters = 0
@@ -114,9 +116,24 @@ export class Jobs {
         }
       }
       ids.push(target)
-      characters += (request.operation === 'normalize' ? e.text : e.speechText).length
+      planned.push(e)
+      const normalizing =
+        request.operation === 'normalize' ||
+        (request.settings.normalize && (!e.manualSpeech || request.replaceManual))
+      characters += (normalizing ? e.text : e.speechText).trim().length
     }
-    return { count: ids.length, characters, protected: protectedCount, muted, ids }
+    return {
+      count: ids.length,
+      characters,
+      protected: protectedCount,
+      muted,
+      ids,
+      ...(request.operation === 'speech'
+        ? {
+            speechCost: estimateSpeechCost(planned, request.settings, request.replaceManual),
+          }
+        : {}),
+    }
   }
   async used(owner: string) {
     const file = path.join(

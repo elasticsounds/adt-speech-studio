@@ -2,7 +2,14 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { beforeEach, afterEach, it, expect, vi } from 'vitest'
-import { DEFAULT_SETTINGS, RunRequest, type Job, type Entry, type BookDetail } from '@speech/types'
+import {
+  DEFAULT_SETTINGS,
+  RunRequest,
+  RunPlan,
+  type Job,
+  type Entry,
+  type BookDetail,
+} from '@speech/types'
 import { createApp } from '../apps/api/src/app.js'
 import { makeFixture, tone, normalizationPayload } from './fixture.js'
 import { filesUnder, jsonFile, hash } from '../packages/bundle/src/files.js'
@@ -748,4 +755,44 @@ it('reports cached normalization and labels normalization failures accurately', 
   expect(logs).toEqual([
     expect.objectContaining({ operation: 'normalization', status: 'failed', model: 'gpt-6-luna' }),
   ])
+})
+
+it('estimates only eligible speech entries without starting jobs or calling a provider', async () => {
+  const plan = async (patch: Partial<RunRequest> = {}) =>
+    RunPlan.parse(await (await call(`/books/${bookId}/plan`, 'POST', request(patch))).json())
+  const missing = await plan()
+  expect(missing.count).toBe(5)
+  expect(missing.speechCost?.lowUsd).toBeGreaterThan(0)
+  const all = await plan({ language: '*', scope: 'all' })
+  expect(all.count).toBe(12)
+  expect(all.speechCost!.lowUsd).toBeGreaterThan(missing.speechCost!.lowUsd!)
+  const single = await plan({ scope: 'selected', ids: ['pg001_h'] })
+  expect(single.characters).toBe('A seed becomes a story'.length)
+  expect(single.speechCost!.highUsd).toBeLessThan(missing.speechCost!.highUsd!)
+  expect((await plan({ operation: 'normalize' })).speechCost).toBeUndefined()
+  await call(`/books/${bookId}/entry`, 'PUT', {
+    language: 'en',
+    id: 'pg001_h',
+    version: 0,
+    muted: true,
+  })
+  const muted = await plan({ scope: 'selected', ids: ['pg001_h'] })
+  expect(muted).toMatchObject({
+    count: 0,
+    characters: 0,
+    muted: 1,
+    speechCost: { lowUsd: 0, highUsd: 0 },
+  })
+  const form = new FormData()
+  form.set('language', 'en')
+  form.set('id', 'pg001_p')
+  form.set('version', '0')
+  form.set('audio', new File([new Uint8Array(tone)], 'voice.wav', { type: 'audio/wav' }))
+  expect((await call(`/books/${bookId}/audio`, 'POST', form)).status).toBe(200)
+  const protectedPlan = await plan({ scope: 'selected', ids: ['pg001_p'] })
+  expect(protectedPlan).toMatchObject({ count: 0, protected: 1, speechCost: { highUsd: 0 } })
+  const replacing = await plan({ scope: 'selected', ids: ['pg001_p'], replaceManual: true })
+  expect(replacing.speechCost!.highUsd).toBeGreaterThan(0)
+  expect(await (await call(`/books/${bookId}/jobs`)).json()).toEqual([])
+  expect(transport).not.toHaveBeenCalled()
 })
