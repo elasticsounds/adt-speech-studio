@@ -416,14 +416,24 @@ it('counts only application-owned storage on a mounted data volume', async () =>
 it('bounds total in-flight entries even when a job requests three workers', async () => {
   let active = 0,
     maximum = 0
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
   transport.mockImplementation(async () => {
     active++
     maximum = Math.max(active, maximum)
-    await new Promise((r) => setTimeout(r, 15))
+    await gate
     active--
     return payload()
   })
-  const done = await finish((await start({ scope: 'all', concurrency: 3 })).id)
+  const job = await start({ scope: 'all', concurrency: 3 })
+  try {
+    await vi.waitFor(() => expect(active).toBe(2))
+  } finally {
+    release()
+  }
+  const done = await finish(job.id)
   expect(done.completed).toBe(6)
   expect(maximum).toBe(2)
 })
