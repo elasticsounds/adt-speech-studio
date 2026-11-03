@@ -10,6 +10,8 @@ import type {
   PublicUser,
   ServerInfo,
   CallLog,
+  WordTimings,
+  VoiceSlot,
 } from '@speech/types'
 
 async function request<T>(url: string, options: RequestInit = {}, keys?: Credentials): Promise<T> {
@@ -57,6 +59,21 @@ export const api = {
   restore: (book: string, body: unknown) => post<Entry>(`/books/${book}/restore`, body),
   uploadAudio: (book: string, data: FormData) =>
     request<Entry>(`/books/${book}/audio`, { method: 'POST', body: data }),
+  timings: (book: string, entry: Entry, slot: VoiceSlot) =>
+    request<WordTimings | null>(
+      `/books/${book}/timings?${new URLSearchParams({ language: entry.language, id: entry.id, slot, version: String(entry.version) })}`,
+    ),
+  saveTimings: (book: string, entry: Entry, slot: VoiceSlot, timings: WordTimings) =>
+    request<Entry>(`/books/${book}/timings`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        language: entry.language,
+        id: entry.id,
+        version: entry.version,
+        slot,
+        timings,
+      }),
+    }),
   jobs: (book: string) => request<Job[]>(`/books/${book}/jobs`),
   plan: (book: string, body: RunRequest) => post<RunPlan>(`/books/${book}/plan`, body),
   run: (book: string, body: RunRequest, keys: Credentials) =>

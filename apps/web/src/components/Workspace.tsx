@@ -37,6 +37,7 @@ import { EntryDialog } from './EntryDialog'
 import { SettingsPanel } from './SettingsPanel'
 import { JobsPanel } from './JobsPanel'
 import { SpeechCostReview } from './SpeechCostReview'
+import { AudioReview } from './audio/AudioReview'
 
 function LanguageName({ code }: { code: string }) {
   let name = code
@@ -143,6 +144,7 @@ export function Workspace({
     [selected, setSelected] = useState<Set<string>>(new Set())
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS),
     [editing, setEditing] = useState<Entry | null>(null),
+    [reviewing, setReviewing] = useState<Entry | null>(null),
     [filesOpen, setFilesOpen] = useState(false),
     [deleteOpen, setDeleteOpen] = useState(false)
   const [proposal, setProposal] = useState<RunRequest | null>(null),
@@ -598,6 +600,16 @@ export function Workspace({
                               <AudioLines size={16} />
                             </button>
                           )}
+                          {entry.audios[slot]?.exists && (
+                            <button
+                              className="icon-button text-stone-400"
+                              aria-label={`Waveform ${entry.id}`}
+                              title="Waveform & word highlighting"
+                              onClick={() => setReviewing(entry)}
+                            >
+                              <AudioLines size={15} />
+                            </button>
+                          )}
                           <button
                             disabled={busy}
                             className="icon-button text-stone-400"
@@ -694,6 +706,24 @@ export function Workspace({
           onClose={() => setEditing(null)}
           onUpdated={refresh}
         />
+      )}
+      {reviewing && (
+        <Modal title="Waveform & word highlighting" onClose={() => setReviewing(null)} wide>
+          <p className="mb-4 text-xs text-stone-500">
+            {reviewing.id} · {reviewing.language} · {slot} recording
+          </p>
+          <AudioReview
+            key={`${reviewing.version}/${slot}`}
+            book={bookId}
+            entry={reviewing}
+            slot={slot}
+            disabled={busy}
+            onUpdated={() => {
+              refresh()
+              setReviewing(null)
+            }}
+          />
+        </Modal>
       )}
       {proposal && (
         <Modal

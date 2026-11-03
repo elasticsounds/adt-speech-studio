@@ -1,5 +1,6 @@
 import { FileLink } from './FileLink'
 import { Recording } from './Recording'
+import { AudioReview } from './audio/AudioReview'
 import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Download, History, Upload, Save, RotateCcw } from 'lucide-react'
@@ -134,8 +135,18 @@ export function EntryDialog({
           {slot === 'primary' ? 'Primary' : 'Secondary'} recording
         </p>
         {entry.audios[slot]?.exists ? (
-          <div className="flex flex-wrap items-center gap-3">
-            <Recording controls src={audioUrl(book, entry, slot)} className="h-9 max-w-full" />
+          <div className="space-y-3">
+            <AudioReview
+              key={`${entry.version}/${slot}`}
+              book={book}
+              entry={entry}
+              slot={slot}
+              disabled={dirty}
+              onUpdated={() => {
+                onUpdated()
+                onClose()
+              }}
+            />
             <FileLink
               filename="recording.wav"
               href={audioUrl(book, entry, slot, true)}
