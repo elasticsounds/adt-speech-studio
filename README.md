@@ -57,7 +57,7 @@ pnpm test:e2e         # actual browser workflow, using a test-only mock provider
 
 ## GitHub Pages frontend
 
-The `Publish GitHub Pages` workflow builds and tests the app, then publishes only `dist/pages/`. Pages is configured with **GitHub Actions** as its source. It deploys pushes to `openai-normalization` (the current pilot branch), `github-pages` or `main`. The repository's `github-pages` environment must allow the publishing branch. No Fly or model secrets are needed by this workflow.
+The `Publish GitHub Pages` workflow builds and tests the app, then publishes only `dist/pages/`. Pages is configured with **GitHub Actions** as its source. It deploys pushes to `fix-workspace-bugs` (the current pilot branch), `openai-normalization`, `github-pages` or `main`. The repository's `github-pages` environment must allow the publishing branch. No Fly or model secrets are needed by this workflow.
 
 `pnpm build` followed by `pnpm build:pages` creates the static frontend at `/adt-speech-studio/`, targeting `https://adt-speech-studio.fly.dev`. If forking, update both values in `scripts/build-pages.mjs`, set the backend's `PUBLIC_WEB_URL` to the new Pages URL, and deploy the backend too. Deploy backend changes before publishing a frontend that requires them.
 

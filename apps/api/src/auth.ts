@@ -8,7 +8,23 @@ import { atomicJson, exists, hash, jsonFile } from '../../../packages/bundle/src
 const derive = promisify(scrypt)
 export class Auth {
   private attempts = new Map<string, { count: number; until: number }>()
+  private accountLocks = new Map<string, Promise<void>>()
   constructor(readonly root: string) {}
+  private async withAccount<T>(username: string, fn: () => Promise<T>): Promise<T> {
+    const before = this.accountLocks.get(username) ?? Promise.resolve()
+    let release!: () => void
+    const hold = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    this.accountLocks.set(username, hold)
+    await before
+    try {
+      return await fn()
+    } finally {
+      release()
+      if (this.accountLocks.get(username) === hold) this.accountLocks.delete(username)
+    }
+  }
   throttle(key: string, max = 10) {
     const now = Date.now(),
       old = this.attempts.get(key)
@@ -53,6 +69,9 @@ export class Auth {
     }
   }
   async login(username: string, password: string) {
+    return this.withAccount(username, () => this.loginAccount(username, password))
+  }
+  private async loginAccount(username: string, password: string) {
     let account: Account | undefined
     try {
       account = Account.parse(await jsonFile(this.file(username)))
@@ -66,6 +85,9 @@ export class Auth {
     }
   }
   async recover(username: string, password: string, code: string) {
+    return this.withAccount(username, () => this.recoverAccount(username, password, code))
+  }
+  private async recoverAccount(username: string, password: string, code: string) {
     let account: Account
     try {
       account = Account.parse(await jsonFile(this.file(username)))
@@ -84,8 +106,13 @@ export class Auth {
     })
     const sessions = path.join(this.root, 'sessions')
     for (const f of await fs.readdir(sessions).catch(() => [])) {
-      const session = await jsonFile<Session>(path.join(sessions, f))
-      if (session.userId === account.id) await fs.rm(path.join(sessions, f))
+      if (!f.endsWith('.json')) continue
+      try {
+        const session = await jsonFile<Session>(path.join(sessions, f))
+        if (session.userId === account.id) await fs.rm(path.join(sessions, f), { force: true })
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e
+      }
     }
     return {
       user: { id: account.id, username },

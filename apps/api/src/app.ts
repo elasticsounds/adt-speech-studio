@@ -281,20 +281,33 @@ export async function createApp(options: { root: string; transport?: typeof fetc
       end = stat.size - 1,
       status = 200
     if (range) {
-      const parsed = /^bytes=(\d+)-(\d*)$/.exec(range)
-      if (!parsed) return new Response(null, { status: 416 })
-      start = Number(parsed[1])
-      end = parsed[2] ? Number(parsed[2]) : end
-      if (start > end || end >= stat.size) return new Response(null, { status: 416 })
+      const unsatisfiable = () => {
+        headers.set('Content-Range', `bytes */${stat.size}`)
+        return new Response(null, { status: 416, headers })
+      }
+      const parsed = /^bytes=(\d*)-(\d*)$/.exec(range)
+      if (!parsed || (!parsed[1] && !parsed[2]) || !stat.size) return unsatisfiable()
+      if (parsed[1]) {
+        start = Number(parsed[1])
+        end = parsed[2] ? Math.min(Number(parsed[2]), end) : end
+      } else {
+        const suffix = Number(parsed[2])
+        if (!suffix) return unsatisfiable()
+        start = Math.max(0, stat.size - suffix)
+      }
+      if (!Number.isSafeInteger(start) || start > end) return unsatisfiable()
       status = 206
       headers.set('Content-Range', `bytes ${start}-${end}/${stat.size}`)
     }
     headers.set('Accept-Ranges', 'bytes')
     headers.set('Content-Length', String(end - start + 1))
-    return new Response(Readable.toWeb(createReadStream(file, { start, end })) as ReadableStream, {
-      headers,
-      status,
-    })
+    return new Response(
+      stat.size ? (Readable.toWeb(createReadStream(file, { start, end })) as ReadableStream) : null,
+      {
+        headers,
+        status,
+      },
+    )
   }
   app.get('/api/info', async (c) => {
     const allowance = Number(process.env.SERVICE_DAILY_CHARACTERS ?? 0)
