@@ -9,6 +9,7 @@ import { tone } from '../fixture.js'
 // This transport exists only in the test server; production bundles never import it.
 process.env.PROVIDER_INTERVAL_MS = '0'
 process.env.SERVICE_DAILY_CHARACTERS = '0'
+process.env.PUBLIC_WEB_URL = 'http://localhost:55024/adt-speech-studio/'
 const root = await fs.mkdtemp(path.join(os.tmpdir(), 'speech-browser-'))
 const { app, jobs } = await createApp({
   root,

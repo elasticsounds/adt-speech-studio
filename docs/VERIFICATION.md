@@ -2,9 +2,9 @@
 
 ## Automated
 
-- `pnpm test`: 40 passing tests across provider contracts, streaming WAV handling, ZIP security/preservation, account isolation, CSRF, recovery, immutable history, cancellation, cache behavior, quotas, manual protection, normalization, secondary narration and interrupted-job recovery.
+- `pnpm test`: 42 passing tests across provider contracts, streaming WAV handling, ZIP security/preservation, account isolation, CSRF, recovery, exact-origin CORS and separate bearer sessions, immutable history, cancellation, cache behavior, quotas, manual protection, normalization, secondary narration and interrupted-job recovery.
 - `pnpm build`: strict TypeScript compilation, Vite frontend and esbuild API production build passed.
-- `pnpm test:e2e`: desktop workflow, mobile workspace layout and mobile sign-in passed in Chromium. Desktop covers sign-up, import, inspection, speech edit, key connection, missing generation, voice change, all-language generation, playback, search and downloaded ZIP contents. The test provider is mocked and absent from the production bundle.
+- `pnpm test:e2e`: three Chromium tests passed: the desktop workflow (including mobile workspace layout), mobile sign-in, and the separate-origin GitHub Pages workflow. Desktop covers sign-up, import, inspection, speech edit, key connection, missing generation, voice change, all-language generation, playback, search and downloaded ZIP contents. The test provider is mocked and absent from the production bundle.
 
 - `pnpm audit --prod`: no known vulnerabilities. Zod was upgraded to 4.6.7 after the audit identified CVE-2023-54404 in the initial version.
 
@@ -16,7 +16,7 @@ OpenAI `gpt-4o-mini-tts` with `coral` returned a valid 249,644-byte WAV for a sh
 
 ## Real reader archive
 
-Source: the public `elasticsounds/Libri_new-adt-2` GitHub archive, revision `137054f` (downloaded 2026-11-02), a 304 MB ZIP containing _Ndryshimet Klimatike_. The reader has 100 Albanian language entries, images, videos, reader scripts, activities and an offline preloader.
+Source: the public `elasticsounds/Libri_new-adt-2` GitHub archive, revision `137054f` (downloaded 2026-11-02), a 316 MB ZIP containing _Ndryshimet Klimatike_. The reader has 100 Albanian language entries, images, videos, reader scripts, activities and an offline preloader.
 
 - Streaming import found the wrapped reader root and all 100 entries.
 - A spoken-text edit exported successfully; all 226 other original files were byte-identical. Only the existing offline preloader changed; a speech catalog was added.
@@ -26,10 +26,20 @@ Source: the public `elasticsounds/Libri_new-adt-2` GitHub archive, revision `137
 
 ## Hosted smoke test
 
-At https://adt-speech-studio.fly.dev, a fresh account uploaded the complete 304 MB reader in Chromium, displayed all 100 entries, connected a personal OpenAI key, generated `pg002003_im002`, played the recording and downloaded a 316,425,706-byte updated ZIP. The generated WAV was 379,244 bytes. The exported reader HTML, quiz HTML, reader runtime and display-text catalog matched the original byte-for-byte. No browser page errors occurred. The temporary production book was deleted after verification.
+At https://adt-speech-studio.fly.dev, a fresh account uploaded the complete 316 MB reader in Chromium, displayed all 100 entries, connected a personal OpenAI key, generated `pg002003_im002`, played the recording and downloaded a 316,425,706-byte updated ZIP. The generated WAV was 379,244 bytes. The exported reader HTML, quiz HTML, reader runtime and display-text catalog matched the original byte-for-byte. No browser page errors occurred. The temporary production book was deleted after verification.
 
-The first deployment exposed an upload-admission bug caused by scanning the volume's root-owned `lost+found` directory. Storage accounting now scans only application-owned directories; a regression test covers this. Shared model credentials remain disabled. A final health/source-archive check follows deployment of the checked-in release.
+The first deployment exposed an upload-admission bug caused by scanning the volume's root-owned `lost+found` directory. Storage accounting now scans only application-owned directories; a regression test covers this. Shared model credentials remain disabled. The deployed health check and corresponding source archive were verified successfully.
 
 ## Operating boundaries
 
 One API process and persistent volume are required. The initial deployment uses private accounts with personal keys and disables shared service-funded calls. No new word alignment, translation generation, additional language creation or full Studio project import is included. See README for retention, backup and quota behavior.
+
+## GitHub Pages follow-up
+
+The local Pages build is served under `/adt-speech-studio/` on a different hostname from the API. Its browser test signs up in a first-party popup, grants a separate session, deletes backend cookies, reloads, uploads a reader, plays authenticated audio, generates missing speech with the mock provider, downloads original and updated ZIPs, and signs out. No browser page errors occurred. API tests reject foreign-origin password/grant requests, cookie fallback and revoked bearer sessions. A regression assertion ensures only the connect document relaxes opener isolation.
+
+The Pages production workflow rebuilds after browser tests so the published JavaScript points to the live Fly backend, never the local mock server. Live verification at https://elasticsounds.github.io/adt-speech-studio/ passed sign-up, popup handoff, upload, reload, spoken-text editing, real OpenAI generation, recording playback/download, updated/original ZIP downloads, mobile layout and logout revocation, with all backend cookies removed. The generated WAV was 192,044 bytes and four seconds long. Its bytes matched the recording in the exported reader; the edited speech catalog and original activities were preserved. The downloaded original ZIP was byte-identical. No browser page errors occurred. The temporary book was removed.
+
+GitHub's unit/build/browser verification and Pages publishing workflow passed. The public Pages source archive contained 65 allowlisted files, all matching the checked-in source byte-for-byte, with no private data paths. Live Gemini testing still requires a Gemini key, as noted above.
+
+A separate live Pages check uploaded the 316,022,812-byte real Albanian reader, displayed its 100 entries, and downloaded the original ZIP through authenticated cross-origin fetch. The downloaded file had an identical SHA-256 digest. There were no browser page errors. Both temporary Pages accounts and their books were removed after verification.

@@ -4,9 +4,10 @@ import tailwind from '@tailwindcss/vite'
 import path from 'node:path'
 export default defineConfig({
   root: 'apps/web',
+  base: process.env.VITE_BASE_PATH ?? '/',
   plugins: [react(), tailwind()],
   resolve: { alias: { '@speech/types': path.resolve('packages/types/src/index.ts') } },
-  build: { outDir: '../../dist/web', emptyOutDir: true },
+  build: { outDir: process.env.WEB_OUT_DIR ?? '../../dist/web', emptyOutDir: true },
   server: {
     host: '127.0.0.1',
     port: Number(process.env.WEB_PORT ?? 55020),

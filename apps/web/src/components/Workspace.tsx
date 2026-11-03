@@ -1,3 +1,5 @@
+import { apiUrl, REMOTE_API, audioSource, downloadFile } from '../hosting'
+import { FileLink } from './FileLink'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -46,12 +48,18 @@ function AudioPlay({ book, entry, slot }: { book: string; entry: Entry; slot: Vo
   const ref = useRef<HTMLAudioElement>(null),
     [playing, setPlaying] = useState(false),
     [error, setError] = useState('')
+  const loaded = useRef('')
+  useEffect(() => {
+    return () => {
+      if (loaded.current.startsWith('blob:')) URL.revokeObjectURL(loaded.current)
+    }
+  }, [])
   return (
     <>
       <audio
         ref={ref}
         preload="none"
-        src={audioUrl(book, entry, slot)}
+        src={REMOTE_API ? undefined : audioUrl(book, entry, slot)}
         onEnded={() => setPlaying(false)}
         onPause={() => setPlaying(false)}
         onError={() => setError('Unable to play this recording.')}
@@ -60,7 +68,7 @@ function AudioPlay({ book, entry, slot }: { book: string; entry: Entry; slot: Vo
         className="icon-button text-emerald-800"
         aria-label={`${playing ? 'Pause' : 'Play'} ${entry.id}`}
         title={error || 'Play recording'}
-        onClick={() => {
+        onClick={async () => {
           const audio = ref.current
           if (!audio) return
           if (playing) {
@@ -70,6 +78,15 @@ function AudioPlay({ book, entry, slot }: { book: string; entry: Entry; slot: Vo
           document.querySelectorAll('audio').forEach((a) => {
             if (a !== audio) a.pause()
           })
+          if (REMOTE_API && !audio.src) {
+            try {
+              loaded.current = await audioSource(audioUrl(book, entry, slot))
+              audio.src = loaded.current
+            } catch {
+              setError('Unable to play this recording.')
+              return
+            }
+          }
           void audio
             .play()
             .then(() => {
@@ -194,12 +211,8 @@ export function Workspace({
   })
   const download = useMutation({
     mutationFn: () => api.export(bookId),
-    onSuccess: (data) => {
-      const a = document.createElement('a')
-      a.href = `/api/books/${bookId}/exports/${data.id}`
-      a.download = 'updated-adt.zip'
-      a.click()
-    },
+    onSuccess: (data) =>
+      downloadFile(apiUrl(`/books/${bookId}/exports/${data.id}`), 'updated-adt.zip'),
   })
   const begin = (
     scope: RunRequest['scope'],
@@ -563,7 +576,12 @@ export function Workspace({
                       <td className="px-2 py-3 align-top">
                         <div className="flex justify-end">
                           {entry.audios[slot]?.exists ? (
-                            <AudioPlay book={bookId} entry={entry} slot={slot} />
+                            <AudioPlay
+                              key={`${entry.id}/${entry.version}/${slot}`}
+                              book={bookId}
+                              entry={entry}
+                              slot={slot}
+                            />
                           ) : (
                             <button
                               disabled={busy}
@@ -636,12 +654,13 @@ export function Workspace({
             </details>
           )}
           <div className="mt-5 flex items-center justify-between">
-            <a
-              href={`/api/books/${bookId}/original`}
+            <FileLink
+              filename="original-adt.zip"
+              href={apiUrl(`/books/${bookId}/original`)}
               className="text-[11px] text-stone-400 underline underline-offset-2"
             >
               Download original ADT
-            </a>
+            </FileLink>
             <button
               disabled={busy}
               onClick={() => setDeleteOpen(true)}
@@ -769,14 +788,15 @@ export function Workspace({
           </p>
           <div className="mb-5 flex flex-wrap gap-2">
             {['texts', 'speech_texts', 'audios'].map((kind) => (
-              <a
+              <FileLink
+                filename={`${kind}.json`}
                 key={kind}
-                href={`/api/books/${bookId}/catalog?${new URLSearchParams({ language, kind })}`}
+                href={apiUrl(`/books/${bookId}/catalog?${new URLSearchParams({ language, kind })}`)}
                 className="btn btn-secondary text-xs"
               >
                 <Download size={14} />
                 {language}/{kind}.json
-              </a>
+              </FileLink>
             ))}
           </div>
           <ErrorNotice error={files.error} />

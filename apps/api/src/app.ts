@@ -7,6 +7,7 @@ import { pipeline } from 'node:stream/promises'
 import { Hono } from 'hono'
 import { getCookie, setCookie } from 'hono/cookie'
 import { secureHeaders } from 'hono/secure-headers'
+import { cors } from 'hono/cors'
 import { bodyLimit } from 'hono/body-limit'
 import { HTTPException } from 'hono/http-exception'
 import { z } from 'zod'
@@ -52,6 +53,24 @@ export async function createApp(options: { root: string; transport?: typeof fetc
     .parse(yaml.load(await fs.readFile('config/speech_instructions.yaml', 'utf8')))
   const app = new Hono<{ Variables: { user: PublicUser } }>()
   const secure = process.env.APP_ORIGIN?.startsWith('https://') ?? false
+  const frontendOrigin = process.env.PUBLIC_WEB_URL
+    ? new URL(process.env.PUBLIC_WEB_URL).origin
+    : undefined
+  const originAllowed = (origin: string, requestUrl: string) =>
+    origin === (process.env.APP_ORIGIN ?? new URL(requestUrl).origin) || origin === frontendOrigin
+  const session = (c: Parameters<typeof getCookie>[0]) => {
+    const header = c.req.header('Authorization')
+    if (header) return /^Bearer ([A-Za-z0-9_-]{43})$/.exec(header)?.[1]
+    const origin = c.req.header('Origin')
+    if (origin && origin !== (process.env.APP_ORIGIN ?? new URL(c.req.url).origin)) return undefined
+    return getCookie(c, 'adt_session')
+  }
+  app.use('*', async (c, next) => {
+    await next()
+    // Only the first-party sign-in window needs an opener for the token handoff.
+    if (c.req.path === '/' && c.req.query('connect') === '1')
+      c.header('Cross-Origin-Opener-Policy', 'unsafe-none')
+  })
   app.use(
     '*',
     secureHeaders({
@@ -73,6 +92,24 @@ export async function createApp(options: { root: string; transport?: typeof fetc
   )
   app.use(
     '/api/*',
+    cors({
+      origin: (origin, c) => (originAllowed(origin, c.req.url) ? origin : undefined),
+      allowMethods: ['GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+      allowHeaders: [
+        'Authorization',
+        'Content-Type',
+        'X-Requested-With',
+        'X-File-Name',
+        'X-Gemini-API-Key',
+        'X-OpenAI-Key',
+        'Range',
+      ],
+      exposeHeaders: ['Content-Disposition', 'Content-Length', 'Content-Range'],
+      maxAge: 600,
+    }),
+  )
+  app.use(
+    '/api/*',
     bodyLimit({
       maxSize: MAX_UPLOAD,
       onError: (c) => c.json({ error: 'Upload exceeds the 1 GB limit.' }, 413),
@@ -81,9 +118,8 @@ export async function createApp(options: { root: string; transport?: typeof fetc
   app.use('/api/*', async (c, next) => {
     c.header('Cache-Control', 'no-store')
     if (!['GET', 'HEAD', 'OPTIONS'].includes(c.req.method)) {
-      const origin = c.req.header('origin'),
-        expected = process.env.APP_ORIGIN ?? new URL(c.req.url).origin
-      if (origin && origin !== expected)
+      const origin = c.req.header('origin')
+      if (origin && !originAllowed(origin, c.req.url))
         throw new HTTPException(403, { message: 'Request origin is not allowed.' })
       if (c.req.header('X-Requested-With') !== 'ADTSpeech')
         throw new HTTPException(403, { message: 'Missing request validation header.' })
@@ -126,11 +162,14 @@ export async function createApp(options: { root: string; transport?: typeof fetc
       maxAge: 7 * 24 * 3600,
     })
   app.get('/api/health', (c) => c.json({ ok: true }))
-  app.get('/api/auth/me', async (c) =>
-    c.json({ user: await auth.user(getCookie(c, 'adt_session')) }),
-  )
+  app.get('/api/auth/me', async (c) => c.json({ user: await auth.user(session(c)) }))
   for (const mode of ['register', 'login', 'recover'] as const)
     app.post(`/api/auth/${mode}`, bodyLimit({ maxSize: 8192 }), async (c) => {
+      if (
+        c.req.header('Origin') &&
+        !(c.req.header('Origin') === (process.env.APP_ORIGIN ?? new URL(c.req.url).origin))
+      )
+        throw new HTTPException(403, { message: 'Sign in using the secure account window.' })
       const body =
         mode === 'recover'
           ? RecoveryRequest.parse(await c.req.json())
@@ -153,7 +192,7 @@ export async function createApp(options: { root: string; transport?: typeof fetc
       return c.json(safe)
     })
   app.post('/api/auth/logout', async (c) => {
-    await auth.logout(getCookie(c, 'adt_session'))
+    await auth.logout(session(c))
     setCookie(c, 'adt_session', '', {
       httpOnly: true,
       secure,
@@ -164,12 +203,26 @@ export async function createApp(options: { root: string; transport?: typeof fetc
     return c.json({ ok: true })
   })
   app.use('/api/*', async (c, next) => {
-    const user = await auth.user(getCookie(c, 'adt_session'))
+    const user = await auth.user(session(c))
     if (!user) throw new HTTPException(401, { message: 'Please sign in.' })
     c.set('user', user)
     await next()
   })
   const owner = (c: { get: (key: 'user') => PublicUser }) => c.get('user').id
+  app.post('/api/auth/connect', bodyLimit({ maxSize: 4096 }), async (c) => {
+    if (
+      !frontendOrigin ||
+      c.req.header('Origin') !== (process.env.APP_ORIGIN ?? new URL(c.req.url).origin)
+    )
+      throw new HTTPException(403, { message: 'Open the secure account window to connect.' })
+    const { state } = z
+      .object({ state: z.string().uuid() })
+      .strict()
+      .parse(await c.req.json())
+    auth.throttle(`connect:${owner(c)}`, 30)
+    return c.json({ token: await auth.createSession(owner(c)), origin: frontendOrigin, state })
+  })
+
   app.use('/api/books/*', async (c, next) => {
     if (['GET', 'HEAD'].includes(c.req.method)) return next()
     return store.exclusive(`request-${owner(c)}`, async () => {
