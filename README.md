@@ -10,12 +10,12 @@ GitHub Pages hosts the interface. The existing Fly service runs account sign-in,
 
 1. Click **Sign in or create an account**. Sign in in the secure Fly window, save your recovery code if creating an account, then choose **Continue to GitHub workspace**. Allow the sign-in popup if your browser blocks it. No invitation or email is needed.
 2. Upload the reader ZIP exported from ADT Studio, up to 1 GB. A ZIP with one enclosing folder is also accepted. Catalogs are limited to 25,000 entries and 8 million combined display/spoken characters.
-3. Open **AI connection** and paste your Gemini API key. Keys stay in browser memory for this tab and server memory during the job; they are not saved. Reloading the page requires entering the key again.
+3. Open **AI connection** and paste your Gemini API key. Add an OpenAI key too if you want text normalization. Keys stay in browser memory for this tab and server memory during the job; they are not saved. Reloading the page requires entering the key again.
 4. Inspect **Language strings** and **Speech**, search by text or ID, edit spoken text, and listen to recordings.
 5. Choose a model, voice and delivery instructions. Use **Generate missing**, select particular entries, or **Regenerate all**. The confirmation lets you include every imported language. Changing settings alone does not start a paid request.
 6. **Download ADT** to get a reader ZIP containing your changes. Your original ZIP is always downloadable too.
 
-Gemini 3.8 Flash TTS is the default model. Legacy 2.5 TTS options remain for compatibility; Google lists their retirement as November 17, 2026 ([model schedule](https://ai.google.dev/gemini-api/docs/deprecations/)). OpenAI speech is also supported. Optional normalization uses Gemini regardless of the speech provider and can prepare numbers, abbreviations, symbols and mathematical expressions without changing display text. The language profiles are adapted from ADT Studio.
+Gemini 3.8 Flash TTS is the default model. Legacy 2.5 TTS options remain for compatibility; Google lists their retirement as November 17, 2026 ([model schedule](https://ai.google.dev/gemini-api/docs/deprecations/)). OpenAI speech is also supported. Optional normalization uses OpenAI (`gpt-4.1-mini` by default) regardless of the speech provider and can prepare numbers, abbreviations, symbols and mathematical expressions without changing display text. The language profiles are adapted from ADT Studio.
 
 Private workspaces are separated by account. Model API charges are billed to the supplied key. The hosted pilot has a 2 GB storage allowance per account, including the original ZIP, extracted files, audio history and exports. Delete unused workspaces to free space. It currently uses one persistent server; it is not a high-availability service.
 
@@ -57,7 +57,7 @@ pnpm test:e2e         # actual browser workflow, using a test-only mock provider
 
 ## GitHub Pages frontend
 
-The `Publish GitHub Pages` workflow builds and tests the app, then publishes only `dist/pages/`. Pages is configured with **GitHub Actions** as its source. It deploys pushes to `github-pages` (the pilot branch) or `main`. The repository's `github-pages` environment must allow the publishing branch. No Fly or model secrets are needed by this workflow.
+The `Publish GitHub Pages` workflow builds and tests the app, then publishes only `dist/pages/`. Pages is configured with **GitHub Actions** as its source. It deploys pushes to `openai-normalization` (the current pilot branch), `github-pages` or `main`. The repository's `github-pages` environment must allow the publishing branch. No Fly or model secrets are needed by this workflow.
 
 `pnpm build` followed by `pnpm build:pages` creates the static frontend at `/adt-speech-studio/`, targeting `https://adt-speech-studio.fly.dev`. If forking, update both values in `scripts/build-pages.mjs`, set the backend's `PUBLIC_WEB_URL` to the new Pages URL, and deploy the backend too. Deploy backend changes before publishing a frontend that requires them.
 
@@ -77,7 +77,7 @@ fly volumes create speech_data --app YOUR_APP --region iad --size 10 --yes
 fly deploy --remote-only --ha=false
 ```
 
-For the existing deployment, run `fly deploy --remote-only --ha=false`. Provider keys are **not** required for bring-your-own-key use. To enable shared generation, configure `GEMINI_API_KEY` and/or `OPENAI_API_KEY` as Fly secrets, then set positive `SERVICE_DAILY_CHARACTERS` and `SERVICE_GLOBAL_DAILY_CHARACTERS` in the deployment environment. Those limits count submitted characters per attempt, not dollar cost. Choose conservative allowances; each new account has its own allowance.
+For the existing deployment, run `fly deploy --remote-only --ha=false`. Provider keys are **not** required for bring-your-own-key use. To enable shared generation, configure `GEMINI_API_KEY` for Gemini speech and `OPENAI_API_KEY` for normalization and/or OpenAI speech as Fly secrets, then set positive `SERVICE_DAILY_CHARACTERS` and `SERVICE_GLOBAL_DAILY_CHARACTERS` in the deployment environment. Those limits count submitted characters per attempt, not dollar cost. Choose conservative allowances; each new account has its own allowance.
 
 Production requires `APP_ORIGIN` to exactly match the public HTTPS origin, without a trailing slash. The backend sign-in cookies are HttpOnly, Secure on HTTPS and SameSite Strict; the Pages frontend uses the separate bearer session described above. `DATA_DIR` must be persistent. Account credentials are scrypt hashes; session and recovery tokens are hashed at rest. Recovery codes rotate when used. There is no email reset path.
 

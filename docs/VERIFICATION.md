@@ -2,7 +2,7 @@
 
 ## Automated
 
-- `pnpm test`: 42 passing tests across provider contracts, streaming WAV handling, ZIP security/preservation, account isolation, CSRF, recovery, exact-origin CORS and separate bearer sessions, immutable history, cancellation, cache behavior, quotas, manual protection, normalization, secondary narration and interrupted-job recovery.
+- `pnpm test`: 52 passing tests across provider contracts, streaming WAV handling, ZIP security/preservation, account isolation, CSRF, recovery, exact-origin CORS and separate bearer sessions, immutable history, cancellation, cache behavior, quotas, manual protection, normalization, secondary narration and interrupted-job recovery.
 - `pnpm build`: strict TypeScript compilation, Vite frontend and esbuild API production build passed.
 - `pnpm test:e2e`: three Chromium tests passed: the desktop workflow (including mobile workspace layout), mobile sign-in, and the separate-origin GitHub Pages workflow. Desktop covers sign-up, import, inspection, speech edit, key connection, missing generation, voice change, all-language generation, playback, search and downloaded ZIP contents. The test provider is mocked and absent from the production bundle.
 
@@ -43,3 +43,9 @@ The Pages production workflow rebuilds after browser tests so the published Java
 GitHub's unit/build/browser verification and Pages publishing workflow passed. The public Pages source archive contained 65 allowlisted files, all matching the checked-in source byte-for-byte, with no private data paths. Live Gemini testing still requires a Gemini key, as noted above.
 
 A separate live Pages check uploaded the 316,022,812-byte real Albanian reader, displayed its 100 entries, and downloaded the original ZIP through authenticated cross-origin fetch. The downloaded file had an identical SHA-256 digest. There were no browser page errors. Both temporary Pages accounts and their books were removed after verification.
+
+## OpenAI normalization follow-up
+
+Issue #5 routes all normalization to OpenAI Responses, with `gpt-4.1-mini` as the default. Automated tests cover personal OpenAI-only normalization, separate service secrets for OpenAI normalization and Gemini speech, quota accounting for both operations, refusal/incomplete-result preservation, legacy settings and cache separation. The Pages browser workflow now normalizes independently and then generates Gemini speech with normalization enabled.
+
+Live OpenAI checks expanded “12” and “3” correctly in both languages: “The garden has twelve flowers and three trees.” and “Ana ka dymbëdhjetë libra dhe tre lapsa.” These calls used the shipped locale guidance and structured-output contract. `pnpm test` (52 tests), `pnpm build` and all three Chromium workflows passed locally. The owner added `OPENAI_API_KEY` to Fly's secret store for shared normalization.

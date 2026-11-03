@@ -4,8 +4,8 @@ import path from 'node:path'
 import { beforeEach, afterEach, it, expect, vi } from 'vitest'
 import { DEFAULT_SETTINGS, RunRequest, type Job, type Entry, type BookDetail } from '@speech/types'
 import { createApp } from '../apps/api/src/app.js'
-import { makeFixture, tone } from './fixture.js'
-import { filesUnder, jsonFile } from '../packages/bundle/src/files.js'
+import { makeFixture, tone, normalizationPayload } from './fixture.js'
+import { filesUnder, jsonFile, hash } from '../packages/bundle/src/files.js'
 import { extractArchive } from '../packages/bundle/src/archive.js'
 
 let root: string, system: Awaited<ReturnType<typeof createApp>>, cookie: string, bookId: string
@@ -65,6 +65,7 @@ const request = (patch: Partial<RunRequest> = {}) =>
 async function start(patch: Partial<RunRequest> = {}) {
   const res = await call(`/books/${bookId}/jobs`, 'POST', request(patch), cookie, {
     'X-Gemini-API-Key': key,
+    'X-OpenAI-Key': 'test-openai-secret',
   })
   expect(res.status, JSON.stringify(await res.clone().json())).toBe(202)
   return (await res.json()) as Job
@@ -99,6 +100,7 @@ beforeEach(async () => {
 afterEach(async () => {
   await system.jobs.stop()
   await fs.rm(root, { recursive: true, force: true })
+  vi.unstubAllEnvs()
   delete process.env.PUBLIC_WEB_URL
   delete process.env.SERVICE_DAILY_CHARACTERS
   delete process.env.MAX_OWNER_BYTES
@@ -351,19 +353,7 @@ it('enforces shared storage limits on manual uploads, edits and generation', asy
   expect(transport).not.toHaveBeenCalled()
 })
 it('normalizes independently, protects manual speech, and honors explicit replacement', async () => {
-  transport.mockImplementation(async () =>
-    Response.json({
-      candidates: [
-        {
-          content: {
-            parts: [
-              { text: JSON.stringify({ speechText: 'Twelve flowers', failureReason: null }) },
-            ],
-          },
-        },
-      ],
-    }),
-  )
+  transport.mockImplementation(async () => Response.json(normalizationPayload()))
   await call(`/books/${bookId}/entry`, 'PUT', {
     language: 'en',
     id: 'pg002_n',
@@ -508,4 +498,161 @@ it('rejects foreign-origin grants/password forms and exposes CORS only to the co
     'Access-Control-Request-Method': 'POST',
   })
   expect(foreign.headers.get('Access-Control-Allow-Origin')).toBeNull()
+})
+
+it('normalizes with only a personal OpenAI key and never sends it to Gemini', async () => {
+  transport.mockImplementation(async () => Response.json(normalizationPayload()))
+  const response = await call(
+    `/books/${bookId}/jobs`,
+    'POST',
+    request({ operation: 'normalize', scope: 'selected', ids: ['pg002_n'] }),
+    cookie,
+    { 'X-OpenAI-Key': 'personal-openai-only' },
+  )
+  expect(response.status).toBe(202)
+  expect((await finish(((await response.json()) as Job).id)).completed).toBe(1)
+  expect(transport).toHaveBeenCalledTimes(1)
+  expect(transport.mock.calls[0][0]).toBe('https://api.openai.com/v1/responses')
+  expect(transport.mock.calls[0][1]!.headers).toMatchObject({
+    Authorization: 'Bearer personal-openai-only',
+  })
+  for (const file of await filesUnder(path.join(root, 'books'))) {
+    if (file.endsWith('.json') || file.endsWith('.jsonl'))
+      expect(await fs.readFile(path.join(root, 'books', file), 'utf8')).not.toContain(
+        'personal-openai-only',
+      )
+  }
+})
+it('uses separate service secrets for OpenAI normalization and Gemini speech and accounts for both', async () => {
+  vi.stubEnv('OPENAI_API_KEY', 'service-openai')
+  vi.stubEnv('GEMINI_API_KEY', 'service-gemini')
+  vi.stubEnv('SERVICE_DAILY_CHARACTERS', '1000')
+  vi.stubEnv('SERVICE_GLOBAL_DAILY_CHARACTERS', '1000')
+  transport.mockImplementation(async (url, init) => {
+    const headers = init!.headers as Record<string, string>
+    if (url === 'https://api.openai.com/v1/responses') {
+      expect(headers.Authorization).toBe('Bearer service-openai')
+      expect(headers).not.toHaveProperty('x-goog-api-key')
+      return Response.json(normalizationPayload())
+    }
+    expect(String(url)).toMatch(
+      /^https:\/\/generativelanguage.googleapis.com\/v1beta\/interactions$/,
+    )
+    expect(headers['x-goog-api-key']).toBe('service-gemini')
+    expect(headers).not.toHaveProperty('Authorization')
+    expect(JSON.parse(init!.body as string).input[0].content[0].text).toBe('Twelve flowers')
+    return payload()
+  })
+  const done = await finish(
+    (
+      await start({
+        scope: 'selected',
+        ids: ['pg002_n'],
+        credentialMode: 'service',
+        settings: { ...DEFAULT_SETTINGS, normalize: true },
+      })
+    ).id,
+  )
+  expect(done.completed).toBe(1)
+  expect(transport).toHaveBeenCalledTimes(2)
+  expect(await system.jobs.used(done.ownerId)).toBe(
+    'A garden has 12 flowers.'.length + 'Twelve flowers'.length,
+  )
+  const entry = (await entries()).find((e) => e.language === 'en' && e.id === 'pg002_n')!
+  expect(entry.text).toBe('A garden has 12 flowers.')
+  expect(entry.speechText).toBe('Twelve flowers')
+  expect(entry.audios.primary?.provider).toBe('gemini')
+})
+it('requires an OpenAI key for normalization without falling back between credential modes', async () => {
+  vi.stubEnv('OPENAI_API_KEY', 'service-openai')
+  vi.stubEnv('GEMINI_API_KEY', 'service-gemini')
+  vi.stubEnv('SERVICE_DAILY_CHARACTERS', '1000')
+  const response = await call(
+    `/books/${bookId}/jobs`,
+    'POST',
+    request({ operation: 'normalize' }),
+    cookie,
+    { 'X-Gemini-API-Key': 'personal-gemini' },
+  )
+  expect(response.status).toBe(400)
+  expect(await response.text()).toContain('OpenAI API key')
+  vi.stubEnv('OPENAI_API_KEY', '')
+  const service = await call(
+    `/books/${bookId}/jobs`,
+    'POST',
+    request({ operation: 'normalize', credentialMode: 'service' }),
+    cookie,
+    { 'X-OpenAI-Key': 'personal-openai' },
+  )
+  expect(service.status).toBe(400)
+  expect(await service.text()).toContain('OpenAI API key')
+  expect(transport).not.toHaveBeenCalled()
+})
+it('resolves legacy normalization settings, preserves historical jobs and skips the old cache', async () => {
+  const old = await finish((await start({ scope: 'selected', ids: ['pg001_p'] })).id)
+  const legacy = { ...DEFAULT_SETTINGS, normalizationModel: 'gemini-2.5-flash' }
+  old.request.settings = legacy
+  await system.store.saveJob(old)
+  await system.store.saveSettings(old.ownerId, bookId, 'en', legacy)
+  const dir = system.store.dir(old.ownerId, bookId)
+  const oldSettings = await fs.readFile(path.join(dir, 'settings.json'), 'utf8')
+  const detail = (await (await call(`/books/${bookId}`)).json()) as BookDetail
+  expect(detail.settings.en.normalizationModel).toBe('gpt-4.1-mini')
+  expect(await fs.readFile(path.join(dir, 'settings.json'), 'utf8')).toBe(oldSettings)
+  const originalText = 'A garden has 12 flowers.'
+  const legacyCache = hash(
+    JSON.stringify([
+      'core-tts-1',
+      'en',
+      originalText,
+      legacy.normalizationModel,
+      legacy.profile,
+      legacy.math,
+    ]),
+  )
+  await fs.mkdir(path.join(dir, '.cache/text'), { recursive: true })
+  await fs.writeFile(
+    path.join(dir, '.cache/text', `${legacyCache}.json`),
+    JSON.stringify({ text: 'Legacy cached reading' }),
+  )
+  transport.mockClear()
+  transport.mockImplementation(async () => Response.json(normalizationPayload()))
+  const patch = {
+    operation: 'normalize' as const,
+    scope: 'selected' as const,
+    ids: ['pg002_n'],
+    settings: legacy,
+  }
+  const done = await finish((await start(patch)).id)
+  expect(done.request.settings.normalizationModel).toBe('gpt-4.1-mini')
+  expect(done.completed).toBe(1)
+  expect(transport).toHaveBeenCalledTimes(1)
+  expect(JSON.parse(transport.mock.calls[0][1]!.body as string).model).toBe('gpt-4.1-mini')
+  expect((await finish((await start(patch)).id)).completed).toBe(1)
+  expect(transport).toHaveBeenCalledTimes(1)
+  expect(
+    (await system.store.jobs(old.ownerId, bookId)).find((j) => j.id === old.id)!.request.settings
+      .normalizationModel,
+  ).toBe('gemini-2.5-flash')
+  expect((await entries()).find((e) => e.language === 'en' && e.id === 'pg002_n')!.speechText).toBe(
+    'Twelve flowers',
+  )
+})
+it('does not publish partial normalization or call speech after incomplete OpenAI output', async () => {
+  transport.mockImplementation(async () =>
+    Response.json({ ...normalizationPayload(), status: 'incomplete' }),
+  )
+  const before = (await entries()).find((e) => e.language === 'en' && e.id === 'pg002_n')!
+  const done = await finish(
+    (
+      await start({
+        scope: 'selected',
+        ids: ['pg002_n'],
+        settings: { ...DEFAULT_SETTINGS, normalize: true },
+      })
+    ).id,
+  )
+  expect(done.failed).toBe(1)
+  expect(transport).toHaveBeenCalledTimes(1)
+  expect((await entries()).find((e) => e.language === 'en' && e.id === 'pg002_n')).toEqual(before)
 })

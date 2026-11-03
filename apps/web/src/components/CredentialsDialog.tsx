@@ -43,10 +43,7 @@ export function CredentialsDialog({
       </div>
       {mode === 'personal' ? (
         <div className="space-y-5">
-          <Field
-            label="Google / Gemini API key"
-            hint="Used for Gemini speech and text normalization."
-          >
+          <Field label="Google / Gemini API key" hint="Used for Gemini speech generation.">
             <input
               type="password"
               className="input font-mono"
@@ -64,10 +61,7 @@ export function CredentialsDialog({
           >
             Get a Gemini API key <ExternalLink size={12} />
           </a>
-          <Field
-            label="OpenAI API key (optional)"
-            hint="Only needed when you choose an OpenAI speech model."
-          >
+          <Field label="OpenAI API key" hint="Required for text normalization and OpenAI speech.">
             <input
               type="password"
               className="input font-mono"

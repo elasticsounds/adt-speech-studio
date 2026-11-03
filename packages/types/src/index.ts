@@ -4,6 +4,7 @@ export const Provider = z.enum(['gemini', 'openai'])
 export type Provider = z.infer<typeof Provider>
 export const VoiceSlot = z.enum(['primary', 'secondary'])
 export type VoiceSlot = z.infer<typeof VoiceSlot>
+export const DEFAULT_NORMALIZATION_MODEL = 'gpt-4.1-mini'
 export const Settings = z.object({
   provider: Provider.default('gemini'),
   model: z
@@ -28,7 +29,7 @@ export const Settings = z.object({
     .string()
     .regex(/^[a-zA-Z0-9._-]+$/)
     .max(120)
-    .default('gemini-2.5-flash'),
+    .default(DEFAULT_NORMALIZATION_MODEL),
 })
 export type Settings = z.infer<typeof Settings>
 export const DEFAULT_SETTINGS = Settings.parse({})

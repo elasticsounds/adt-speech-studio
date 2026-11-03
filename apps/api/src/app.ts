@@ -37,7 +37,7 @@ import {
   inside,
   jsonFile,
 } from '../../../packages/bundle/src/files.js'
-import { validWav } from '../../../packages/tts/src/provider.js'
+import { validWav, openAINormalizationSettings } from '../../../packages/tts/src/provider.js'
 
 export async function createApp(options: { root: string; transport?: typeof fetch }) {
   const store = new Store(options.root),
@@ -372,7 +372,12 @@ export async function createApp(options: { root: string; transport?: typeof fetc
     return c.json({
       book: await store.summary(user, id),
       entries: [...state.entries.values()],
-      settings: await store.settings(user, id),
+      settings: Object.fromEntries(
+        Object.entries(await store.settings(user, id)).map(([language, settings]) => [
+          language,
+          openAINormalizationSettings(settings),
+        ]),
+      ),
       jobs: await store.jobs(user, id),
     })
   })
