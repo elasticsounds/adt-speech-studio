@@ -8,26 +8,10 @@ import {
   type CallLog,
 } from '@speech/types'
 import { hash } from '../../bundle/src/files.js'
+import { providerPool } from './scheduler.js'
 
 const GOOGLE = 'https://generativelanguage.googleapis.com/v1beta'
-const waiting = new Map<string, Promise<void>>()
-export async function providerTurn(key: string, signal: AbortSignal) {
-  const id = hash(key)
-  const before = waiting.get(id) ?? Promise.resolve()
-  let release!: () => void
-  const current = new Promise<void>((r) => {
-    release = r
-  })
-  waiting.set(id, current)
-  try {
-    await before
-    signal.throwIfAborted()
-    await delay(Number(process.env.PROVIDER_INTERVAL_MS ?? 1000), undefined, { signal })
-  } finally {
-    release()
-    if (waiting.get(id) === current) waiting.delete(id)
-  }
-}
+const bodyPermits = new WeakMap<Response, (success: boolean) => void>()
 export function validateSettings(settings: Settings) {
   const supported = settings.provider === 'gemini' ? GEMINI_MODELS : OPENAI_MODELS
   if (!supported.includes(settings.model))
@@ -142,10 +126,17 @@ export async function request(
   transport: typeof fetch,
   onAttempt: (n: number) => Promise<void>,
 ) {
+  const pool = providerPool(key, url)
   for (let attempt = 1; attempt <= 3; attempt++) {
     signal.throwIfAborted()
-    await providerTurn(key, signal)
-    await onAttempt(attempt)
+    const release = await pool.acquire(signal)
+    try {
+      signal.throwIfAborted()
+      await onAttempt(attempt)
+    } catch (error) {
+      release()
+      throw error
+    }
     let response: Response
     try {
       response = await transport(url, {
@@ -158,23 +149,33 @@ export async function request(
         signal: AbortSignal.any([signal, AbortSignal.timeout(120000)]),
       })
     } catch (error) {
+      release()
       signal.throwIfAborted()
       if (attempt === 3)
         throw new Error('Provider connection failed or timed out. Retry this recording.')
       await delay(attempt * 1500, undefined, { signal })
       continue
     }
-    if (response.ok) return response
+    if (response.ok) {
+      bodyPermits.set(response, (success) => {
+        if (success) pool.succeeded()
+        release()
+      })
+      return response
+    }
     const retryable = response.status === 429 || response.status >= 500
+    const seconds = Number(response.headers.get('retry-after'))
+    const retryMs =
+      Number.isFinite(seconds) && seconds > 0 ? Math.min(seconds * 1000, 30000) : attempt * 2500
+    if (retryable) pool.limited(retryMs)
     // Do not expose provider-supplied error bodies, which may echo credentials.
-    await response.body?.cancel()
+    try {
+      await response.body?.cancel()
+    } finally {
+      release()
+    }
     if (retryable && attempt < 3) {
-      const seconds = Number(response.headers.get('retry-after'))
-      await delay(
-        Number.isFinite(seconds) && seconds > 0 ? Math.min(seconds * 1000, 30000) : attempt * 2500,
-        undefined,
-        { signal },
-      )
+      await delay(retryMs, undefined, { signal })
       continue
     }
     if (response.status === 401 || response.status === 403)
@@ -192,21 +193,28 @@ export async function request(
   throw new Error('Provider request failed.')
 }
 async function boundedBytes(response: Response) {
-  const reader = response.body?.getReader()
-  if (!reader) throw new Error('Empty provider response.')
-  const chunks: Uint8Array[] = []
-  let size = 0
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) break
-    size += value.length
-    if (size > 64 * 1024 * 1024) {
-      await reader.cancel()
-      throw new Error('Provider response is too large.')
+  let success = false
+  try {
+    const reader = response.body?.getReader()
+    if (!reader) throw new Error('Empty provider response.')
+    const chunks: Uint8Array[] = []
+    let size = 0
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      size += value.length
+      if (size > 64 * 1024 * 1024) {
+        await reader.cancel()
+        throw new Error('Provider response is too large.')
+      }
+      chunks.push(value)
     }
-    chunks.push(value)
+    success = true
+    return Buffer.concat(chunks)
+  } finally {
+    bodyPermits.get(response)?.(success)
+    bodyPermits.delete(response)
   }
-  return Buffer.concat(chunks)
 }
 export async function boundedJson(response: Response) {
   return JSON.parse((await boundedBytes(response)).toString('utf8')) as Record<string, any>

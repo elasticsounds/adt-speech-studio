@@ -10,6 +10,7 @@ import {
   type CallLog,
 } from '@speech/types'
 import { Store } from './store.js'
+import { boundedSetting } from '../../../packages/tts/src/scheduler.js'
 import { hasWordTimings } from '../../../packages/bundle/src/timings.js'
 import { TIMESTAMP_MODEL } from '../../../packages/tts/src/timestamps.js'
 import { runTimestampJob, estimateTimestampCost } from './timestamp-job.js'
@@ -53,7 +54,7 @@ export class Jobs {
           this.entryQueue.shift()?.()
         })
       }
-      if (this.entryCount < 2) grant()
+      if (this.entryCount < boundedSetting('MAX_ENTRY_CONCURRENCY', 8, 1, 16)) grant()
       else {
         this.entryQueue.push(grant)
         signal.addEventListener('abort', abort, { once: true })
