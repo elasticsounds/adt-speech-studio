@@ -95,3 +95,15 @@ Spec: [generation-performance.md](specs/generation-performance.md). Storage PR #
 - Local synthetic storage benchmark: 5,000 files; 20 checks using the old owner-plus-global scans took 2,932 ms. The new checks took 2 ms after a one-time 87 ms reconciliation. This is filesystem-check timing on the development machine, not a claim about Gemini throughput or Fly performance. Regression tests also prove repeated checks perform zero book-tree reads.
 
 No paid API calls, production deployment, account/book mutations or machine resizing were performed for these fixes. Deployment must preserve completed work and safely drain/stop active jobs; publish the matching frontend after the backend. Benchmark actual uncached English/Albanian generation after rollout before claiming desktop parity or increasing concurrency. External book-file maintenance requires a stopped server and restart reconciliation.
+
+## Hosted performance rollout — 2026-11-15
+
+Owner explicitly requested deployment after selecting performance-1x / 2 GB in Fly. Deployed application release: `eccf508f529cd35b20e621f0012bfcfe9127ad8e`; Fly image `deployment-01M7G8G66GNP24FC43DQNQJ93R`. The existing machine and persistent volume were retained, with no running/interrupted jobs found before rollout. The committed Fly configuration now preserves the owner's chosen size.
+
+- Fly deployment and health checks passed; the live service still reports one performance CPU / 2048 MB.
+- Pages workflow run `43748779135` succeeded, including all 96 tests and four browser workflows, then published the matching frontend.
+- Live authenticated checks passed for registration/sign-in, reader ZIP import, spoken-text editing, cost planning, original ZIP preservation and exported text. CORS allows the configured Pages origin. Gemini/OpenAI service credentials remain available. No paid model calls were made.
+- Removed the temporary test book, session and account. Existing users/books were not modified.
+- Backend and Pages source archives each match all 86 files of the deployed application commit; both pages and their script assets return successfully.
+
+One duplicate CI verification run exposed a test snapshot race: a completed job receipt becomes visible just before its final storage accounting settles. The follow-up test helper now awaits `jobs.settle()` before asserting stable file totals, matching existing production mutation admission. This is a test-only correction; it does not change the deployed application code. The full 96-test suite and typecheck pass after the correction. Real provider throughput remains to be measured during user generation.

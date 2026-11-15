@@ -82,7 +82,12 @@ async function finish(id: string) {
   for (let i = 0; i < 500; i++) {
     const jobs = (await (await call(`/books/${bookId}/jobs`)).json()) as Job[]
     const job = jobs.find((j) => j.id === id)!
-    if (job.status !== 'running') return job
+    if (job.status !== 'running') {
+      // The atomic receipt is visible just before its byte accounting settles.
+      // Await the runner before assertions that compare a stable disk snapshot.
+      await system.jobs.settle(bookId)
+      return job
+    }
     await new Promise((r) => setTimeout(r, 10))
   }
   throw new Error('Job did not finish')
