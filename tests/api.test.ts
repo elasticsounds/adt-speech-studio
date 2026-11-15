@@ -421,6 +421,49 @@ it('counts only application-owned storage on a mounted data volume', async () =>
   expect(await system.store.totalBytes()).toBe(before)
 })
 
+it('AC-1: accounts for imported books, speech, settings, export and deletion exactly', async () => {
+  const check = async () => {
+    const { directoryBytes } = await import('../packages/bundle/src/files.js')
+    let actual = 0
+    for (const name of ['books', 'accounts', 'sessions', 'usage'])
+      actual += await directoryBytes(path.join(root, name))
+    expect(await system.store.totalBytes()).toBe(actual)
+  }
+  await check()
+  expect((await finish((await start()).id)).status).toBe('completed')
+  await check()
+  const ownerId = (await fs.readdir(path.join(root, 'books')))[0]
+  await system.store.saveSettings(ownerId, bookId, 'en', DEFAULT_SETTINGS)
+  await check()
+  const entry = (await entries()).find((e) => e.language === 'en' && e.id === 'pg001_p')!
+  await system.store.saveTimings(
+    ownerId,
+    bookId,
+    entry,
+    'primary',
+    {
+      words: [{ word: 'Test', start: 0, end: 0.1 }],
+      text: 'Test',
+      duration: 0.1,
+    },
+    'generated',
+  )
+  await check()
+  transport.mockImplementation(async () => Response.json(normalizationPayload()))
+  expect(
+    (
+      await finish(
+        (await start({ operation: 'normalize', scope: 'selected', ids: ['pg001_p'] })).id,
+      )
+    ).status,
+  ).toBe('completed')
+  await check()
+  expect((await call(`/books/${bookId}/export`, 'POST', {})).status).toBe(200)
+  await check()
+  await system.store.delete(ownerId, bookId)
+  await check()
+})
+
 it('bounds total in-flight entries even when a job requests three workers', async () => {
   let active = 0,
     maximum = 0

@@ -91,11 +91,15 @@ export async function runTimestampJob(
       (n) => onAttempt(n, allowance),
     )
     signal.throwIfAborted()
-    await store.exclusive('storage-admission', async () => {
-      await store.capacity(owner, Buffer.byteLength(JSON.stringify(data)) + 65536)
-      signal.throwIfAborted()
-      await atomicJson(cache, data)
-    })
+    await store.writeFiles(
+      owner,
+      [cache],
+      Buffer.byteLength(JSON.stringify(data)) + 65536,
+      async () => {
+        signal.throwIfAborted()
+        await atomicJson(cache, data)
+      },
+    )
   }
   signal.throwIfAborted()
   const updated = await store.saveTimings(owner, bookId, entry, slot, data, 'generated', signal)

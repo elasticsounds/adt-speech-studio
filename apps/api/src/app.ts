@@ -326,14 +326,14 @@ export async function createApp(options: { root: string; transport?: typeof fetc
     })
   })
   app.get('/api/books', async (c) => c.json(await store.list(owner(c))))
-  app.post('/api/books', async (c) =>
-    store.exclusive('storage-admission', async () => {
-      const user = owner(c),
-        id = randomUUID(),
-        dir = store.dir(user, id)
+  app.post('/api/books', async (c) => {
+    const user = owner(c),
+      id = randomUUID(),
+      dir = store.dir(user, id)
+    return store.writeFiles(user, [dir], undefined, async () => {
       if ((await store.list(user)).length >= 20)
         throw new Error('You can keep up to 20 ADTs. Delete an old workspace to upload another.')
-      const ownerUsed = await directoryBytes(path.join(options.root, 'books', user)),
+      const ownerUsed = await store.ownerBytes(user),
         totalUsed = await store.totalBytes()
       const remaining = Math.min(
         Number(process.env.MAX_OWNER_BYTES ?? 2 * 1024 ** 3) - ownerUsed,
@@ -378,8 +378,8 @@ export async function createApp(options: { root: string; transport?: typeof fetc
         await fs.rm(dir, { recursive: true, force: true })
         throw e
       }
-    }),
-  )
+    })
+  })
   app.get('/api/books/:book', async (c) => {
     const id = c.req.param('book'),
       user = owner(c),
@@ -531,15 +531,19 @@ export async function createApp(options: { root: string; transport?: typeof fetc
     if (!entry) throw new Error('Text entry not found.')
     const dir = store.dir(user, id),
       name = `${hash(bytes)}.${ext}`
-    await store.exclusive('storage-admission', async () => {
-      await store.capacity(user, bytes.length + 65536)
-      await fs.mkdir(path.join(dir, 'blobs'), { recursive: true })
-      await fs
-        .writeFile(path.join(dir, 'blobs', name), bytes, { flag: 'wx', mode: 0o600 })
-        .catch((e) => {
-          if (e.code !== 'EEXIST') throw e
-        })
-    })
+    await store.writeFiles(
+      user,
+      [path.join(dir, 'blobs', name)],
+      bytes.length + 65536,
+      async () => {
+        await fs.mkdir(path.join(dir, 'blobs'), { recursive: true })
+        await fs
+          .writeFile(path.join(dir, 'blobs', name), bytes, { flag: 'wx', mode: 0o600 })
+          .catch((e) => {
+            if (e.code !== 'EEXIST') throw e
+          })
+      },
+    )
     const record = {
       file: `blobs/${name}`,
       exportName: `manual-${name}`,
@@ -640,26 +644,31 @@ export async function createApp(options: { root: string; transport?: typeof fetc
     const id = c.req.param('book')
     await idle(id)
     const state = await store.load(owner(c), id)
-    return store.exclusive('storage-admission', async () => {
-      const dir = store.dir(owner(c), id),
-        entries = [...state.entries.values()],
-        signature = hash(JSON.stringify(entries.map((e) => [e.language, e.id, e.version])))
-      const receipt = path.join(dir, '.cache', 'export', `${signature}.json`)
-      if (await exists(receipt)) {
-        const cached = await jsonFile<{ id: string }>(receipt)
-        if (await exists(path.join(dir, 'exports', `${cached.id}.zip`))) return c.json(cached)
-      }
-      // ZIP output cannot exceed the uncompressed inputs plus modest archive overhead.
-      const required =
-        (await directoryBytes(path.join(dir, 'original'))) +
-        (await directoryBytes(path.join(dir, 'blobs'))) +
-        16 * 1024 ** 2
-      await store.capacity(owner(c), required)
-      const output = await exportBook(dir, state.book, entries),
-        result = { id: path.basename(output, '.zip') }
-      await atomicJson(receipt, result)
-      return c.json(result)
-    })
+    const dir = store.dir(owner(c), id)
+    return store.writeFiles(
+      owner(c),
+      [path.join(dir, 'exports'), path.join(dir, '.cache', 'export')],
+      undefined,
+      async () => {
+        const entries = [...state.entries.values()],
+          signature = hash(JSON.stringify(entries.map((e) => [e.language, e.id, e.version])))
+        const receipt = path.join(dir, '.cache', 'export', `${signature}.json`)
+        if (await exists(receipt)) {
+          const cached = await jsonFile<{ id: string }>(receipt)
+          if (await exists(path.join(dir, 'exports', `${cached.id}.zip`))) return c.json(cached)
+        }
+        // ZIP output cannot exceed the uncompressed inputs plus modest archive overhead.
+        const required =
+          (await directoryBytes(path.join(dir, 'original'))) +
+          (await directoryBytes(path.join(dir, 'blobs'))) +
+          16 * 1024 ** 2
+        await store.capacity(owner(c), required)
+        const output = await exportBook(dir, state.book, entries),
+          result = { id: path.basename(output, '.zip') }
+        await atomicJson(receipt, result)
+        return c.json(result)
+      },
+    )
   })
   app.get('/api/books/:book/exports/:export', async (c) => {
     const id = c.req.param('book')
