@@ -170,7 +170,7 @@ export const RunRequest = z.object({
   operation: z.enum(['speech', 'normalize', 'timestamps']).default('speech'),
   force: z.boolean().default(false),
   replaceManual: z.boolean().default(false),
-  concurrency: z.number().int().min(1).max(3).default(2),
+  concurrency: z.number().int().min(1).max(8).default(4),
 })
 export type RunRequest = z.infer<typeof RunRequest>
 export const SpeechCost = z.object({

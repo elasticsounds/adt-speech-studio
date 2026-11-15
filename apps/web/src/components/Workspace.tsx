@@ -26,7 +26,7 @@ import {
   type Credentials,
   type Entry,
   type Job,
-  type RunRequest,
+  RunRequest,
   type Settings,
   type ServerInfo,
   type VoiceSlot,
@@ -232,18 +232,19 @@ export function Workspace({
   ) => {
     setActionError(null)
     run.reset()
-    setProposal({
-      language,
-      slot,
-      scope,
-      ids,
-      settings: { ...settings },
-      credentialMode: mode,
-      operation,
-      force,
-      replaceManual: false,
-      concurrency: 2,
-    })
+    setProposal(
+      RunRequest.parse({
+        language,
+        slot,
+        scope,
+        ids,
+        settings: { ...settings },
+        credentialMode: mode,
+        operation,
+        force,
+        replaceManual: false,
+      }),
+    )
   }
   const retry = (ids: string[]) => {
     if (!latestJob) return

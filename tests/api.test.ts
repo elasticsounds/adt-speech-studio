@@ -464,7 +464,8 @@ it('AC-1: accounts for imported books, speech, settings, export and deletion exa
   await check()
 })
 
-it('bounds total in-flight entries even when a job requests three workers', async () => {
+it('AC-2: honors the configured global entry cap when a job requests more workers', async () => {
+  vi.stubEnv('MAX_ENTRY_CONCURRENCY', '2')
   let active = 0,
     maximum = 0
   let release!: () => void
