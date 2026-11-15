@@ -42,6 +42,6 @@ kill_timeout = "30s"
   destination = "/data"
 
 [[vm]]
-  memory = "1gb"
-  cpu_kind = "shared"
+  memory = "2gb"
+  cpu_kind = "performance"
   cpus = 1
