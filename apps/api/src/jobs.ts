@@ -267,10 +267,15 @@ export class Jobs {
   private async run(job: Job, ids: string[], credentials: Credentials, signal: AbortSignal) {
     const { ownerId: owner, bookId, request } = job,
       dir = this.store.dir(owner, bookId)
-    const save = async () => {
-      job.updatedAt = new Date().toISOString()
-      await this.store.saveJob(job)
-    }
+    const recordings = new Map<string, Promise<{ file: string; bytes: number }>>()
+    let lastSaved = 0
+    const save = async (force = false) =>
+      this.store.exclusive(`checkpoint-${job.id}`, async () => {
+        if (!force && Date.now() - lastSaved < 1000) return
+        job.updatedAt = new Date().toISOString()
+        await this.store.saveJob(job)
+        lastSaved = Date.now()
+      })
     let cursor = 0
     const worker = async () => {
       while (cursor < ids.length && !signal.aborted && job.status === 'running') {
@@ -279,22 +284,35 @@ export class Jobs {
           job.language === '*' ? (JSON.parse(id) as [string, string]) : [job.language, id]
         job.activeIds.push(id)
         await save()
+        const started = performance.now()
+        const timing: Record<string, number> = {}
+        const measure = async <T>(name: string, fn: () => Promise<T>) => {
+          const at = performance.now()
+          try {
+            return await fn()
+          } finally {
+            timing[name] = Math.round(performance.now() - at)
+          }
+        }
         let attempt = 0
+        let entryFailed = false
         let input = ''
         let instructions = request.settings.instructions
         let model = request.settings.model
         let operation = request.operation === 'normalize' ? 'normalization' : 'speech'
         let normalizationCached = false
-        const log = async (status: CallLog['status'], response: string) => {
+        const log = async (status: CallLog['status'], response: string, metrics = false) => {
           const keys = Object.values(credentials).filter(Boolean) as string[]
           const value: CallLog = {
             at: new Date().toISOString(),
             entryId: job.language === '*' ? `${language}/${textId}` : id,
-            operation,
-            model,
+            operation: metrics ? 'performance' : operation,
+            model: metrics ? '' : model,
             voice: request.settings.voice,
-            input: redact(input, keys, 100000),
-            instructions: redact(instructions, keys, 40000),
+            input: metrics ? '' : redact(input, keys, 100000),
+            instructions: metrics
+              ? 'Milliseconds; stage workflows include scheduling/retries and may include persistence. Shared speech includes waiting for its recording.'
+              : redact(instructions, keys, 40000),
             status,
             response: redact(response, keys, 100000),
             attempt,
@@ -307,7 +325,7 @@ export class Jobs {
         }
         let release: () => void = () => {}
         try {
-          release = await this.acquireEntry(signal)
+          release = await measure('entryQueueMs', () => this.acquireEntry(signal))
           signal.throwIfAborted()
           const state = await this.store.load(owner, bookId)
           let entry = state.entries.get(entryKey(language, textId))!
@@ -344,14 +362,16 @@ export class Jobs {
               normalizationCached = true
               await log('cached', text)
             } else {
-              const normalized = await normalizeText(
-                entry.text,
-                entry.language,
-                request.settings,
-                credentials.openai!,
-                signal,
-                this.transport,
-                beforeAttempt,
+              const normalized = await measure('normalizationWorkflowMs', () =>
+                normalizeText(
+                  entry.text,
+                  entry.language,
+                  request.settings,
+                  credentials.openai!,
+                  signal,
+                  this.transport,
+                  beforeAttempt,
+                ),
               )
               text = normalized.text
               signal.throwIfAborted()
@@ -369,6 +389,7 @@ export class Jobs {
               entry.version,
               { speechText: text, manualSpeech: false },
               'Normalized speech text',
+              signal,
             )
           }
           if (request.operation === 'normalize') {
@@ -412,24 +433,42 @@ export class Jobs {
               }
             }
             if (!file) {
-              const audio = await synthesize(
-                input,
-                request.settings,
-                credentials[request.settings.provider]!,
-                signal,
-                this.transport,
-                beforeAttempt,
-              )
-              signal.throwIfAborted()
-              file = path.join(dir, 'blobs', `${hash(audio)}.wav`)
-              bytes = audio.length
-              await this.store.writeFiles(owner, [file, cached], bytes + 65536, async () => {
-                await fs.mkdir(path.dirname(file!), { recursive: true })
-                await fs.writeFile(file!, audio, { flag: 'wx', mode: 0o600 }).catch((e) => {
-                  if (e.code !== 'EEXIST') throw e
-                })
-                await atomicJson(cached, { file: path.basename(file!) })
-              })
+              let recording = recordings.get(signature)
+              if (recording) hit = true
+              else {
+                recording = (async () => {
+                  const audio = await synthesize(
+                    input,
+                    request.settings,
+                    credentials[request.settings.provider]!,
+                    signal,
+                    this.transport,
+                    beforeAttempt,
+                  )
+                  signal.throwIfAborted()
+                  const target = path.join(dir, 'blobs', `${hash(audio)}.wav`)
+                  await this.store.writeFiles(
+                    owner,
+                    [target, cached],
+                    audio.length + 65536,
+                    async () => {
+                      signal.throwIfAborted()
+                      await fs.mkdir(path.dirname(target), { recursive: true })
+                      await fs.writeFile(target, audio, { flag: 'wx', mode: 0o600 }).catch((e) => {
+                        if (e.code !== 'EEXIST') throw e
+                      })
+                      await atomicJson(cached, { file: path.basename(target) })
+                    },
+                  )
+                  return { file: target, bytes: audio.length }
+                })()
+                recordings.set(signature, recording)
+              }
+              // Retain failures for this job too: duplicate entries must not multiply
+              // exhausted provider retries. A user retry starts a fresh job/map.
+              const result = await measure('speechWorkflowMs', () => recording!)
+              file = result.file
+              bytes = result.bytes
             }
             signal.throwIfAborted()
             const audio = {
@@ -463,18 +502,20 @@ export class Jobs {
             input = entry.speechText
             attempt = 0
             instructions = `Transcribe the existing ${request.slot} recording for word timestamps.`
-            const result = await runTimestampJob(
-              this.store,
-              job,
-              entry,
-              credentials.openai!,
-              signal,
-              this.transport,
-              beforeAttempt,
-              async (status, response, details) => {
-                instructions = details
-                await log(status, response)
-              },
+            const result = await measure('timestampWorkflowMs', () =>
+              runTimestampJob(
+                this.store,
+                job,
+                entry,
+                credentials.openai!,
+                signal,
+                this.transport,
+                beforeAttempt,
+                async (status, response, details) => {
+                  instructions = details
+                  await log(status, response)
+                },
+              ),
             )
             hit = hit && result.cached
           }
@@ -482,6 +523,7 @@ export class Jobs {
           if (hit) job.cached++
           job.results.push({ id, status: hit ? 'cached' : 'done' })
         } catch (e) {
+          entryFailed = true
           if (signal.aborted) break
           const message = redact(
             (operation === 'timestamps' ? 'Recording kept; word timestamps failed: ' : '') +
@@ -498,6 +540,8 @@ export class Jobs {
         } finally {
           release()
           job.activeIds = job.activeIds.filter((x) => x !== id)
+          timing.elapsedMs = Math.round(performance.now() - started)
+          await log(signal.aborted || entryFailed ? 'failed' : 'done', JSON.stringify(timing), true)
           await save()
         }
       }
@@ -517,7 +561,7 @@ export class Jobs {
       // the completed receipt becomes visible, while shutdown still awaits it.
       const active = this.active.get(job.id)
       if (active) active.finished = true
-      await save()
+      await save(true)
     }
   }
   async cancel(owner: string, bookId: string, jobId: string) {

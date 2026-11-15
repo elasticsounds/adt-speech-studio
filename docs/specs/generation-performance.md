@@ -20,3 +20,7 @@ Keep the provider/model, book format, immutable revisions, account isolation, ex
 Focused draft PR slices cover storage accounting, request scheduling, and job batching/reuse. Regression tests must exercise byte accounting against actual disk usage (including failed writes and restart), quota races, cancellation, provider backoff and duplicate generation. Run formatting, types/build, unit/API and browser suites with mocked providers. Report synthetic performance measurements separately from real Gemini timings.
 
 Push review branches only. The current Pages deployment branch stays unchanged. Fly deployment/resize requires a separate rollout preserving completed audio and restarting only unfinished entries after active jobs are safely stopped or drained. First benchmark the same uncached English/Albanian entries and key/project as the desktop script; compare provider time, storage time, throughput and retries at concurrency 2, 4 and 8. A performance CPU trial remains a separately approved operational option.
+
+## Implementation evidence
+
+Local acceptance criteria AC-1 through AC-4 pass as of 2026-11-15; see [verification](../VERIFICATION.md#generation-performance-fixes--2026-11-15-local-not-deployed). Review slices: storage #24, scheduling #26, job performance follow-up. Production rollout, paid comparison against the desktop script and independent review remain outstanding.

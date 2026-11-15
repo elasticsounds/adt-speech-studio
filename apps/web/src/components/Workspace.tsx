@@ -178,12 +178,12 @@ export function Workspace({
   }, [detail.data, bookId, language, info])
   useEffect(() => {
     const marker = latestJob
-      ? `${latestJob.id}/${latestJob.status}/${Math.floor(latestJob.completed / 5)}`
+      ? `${latestJob.id}/${latestJob.status}/${latestJob.status === 'running' ? Math.floor(Date.parse(latestJob.updatedAt) / 5000) : latestJob.completed}`
       : ''
     if (marker && marker !== jobMarker.current) {
       jobMarker.current = marker
       void client.invalidateQueries({ queryKey: ['book', bookId] })
-      void client.invalidateQueries({ queryKey: ['books'] })
+      if (latestJob?.status !== 'running') void client.invalidateQueries({ queryKey: ['books'] })
     }
   }, [latestJob, bookId, client])
   useEffect(() => {
