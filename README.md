@@ -90,6 +90,10 @@ Production requires `APP_ORIGIN` to exactly match the public HTTPS origin, witho
 
 All of a book's original files, revisions, blobs, jobs, logs and exports live under `DATA_DIR/books/<owner>/<book>/`. Identity records and shared service usage live separately under `DATA_DIR`. Back up the entire persistent volume, including identity records. Fly volume snapshots are a recovery aid, not a substitute for your own tested backups. Deleting a workspace removes its live directory; older backups may retain it. Retain the downloaded original/updated ZIP for important work.
 
+Identical speech requests within a job share one recording and keep separate entry revisions, including forced runs (which still bypass recordings from previous jobs). Failed duplicates share the failure; retry starts a fresh job. Intermediate job receipts are checkpointed at most once per second and terminal receipts always persist. After an abrupt crash, a receipt can lag behind saved entry revisions; use the existing unfinished-entry retry, which reuses completed cached recordings.
+
+Generation logs include `performance` records with numeric queue, workflow and elapsed milliseconds. Workflow times include scheduling/retries (and speech/timestamp persistence), not just remote model time; shared recordings include time waiting for the original request. Compare these alongside provider usage and Fly CPU metrics. Book details refresh roughly every five seconds during work; the library refreshes on completion.
+
 Interrupted jobs are marked interrupted at startup and can be retried from the UI with credentials supplied again. Successful entries and histories survive restarts. Duplicate downloads of an unchanged revision reuse its existing export instead of consuming more disk. Storage capacity is enforced on imports, audio, revisions and export admission.
 
 ## Verification

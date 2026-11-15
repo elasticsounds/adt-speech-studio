@@ -490,6 +490,105 @@ it('AC-2: honors the configured global entry cap when a job requests more worker
   expect(maximum).toBe(2)
 })
 
+it('AC-2: runs four provider requests concurrently with default job settings', async () => {
+  let active = 0
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  transport.mockImplementation(async () => {
+    active++
+    await gate
+    active--
+    return payload()
+  })
+  const job = await start({ scope: 'all' })
+  try {
+    await vi.waitFor(() => expect(active).toBe(4))
+  } finally {
+    release()
+  }
+  expect((await finish(job.id)).completed).toBe(6)
+})
+
+async function duplicateSpeech() {
+  for (const id of ['pg001_p', 'pg002_n']) {
+    expect(
+      (
+        await call(`/books/${bookId}/entry`, 'PUT', {
+          language: 'en',
+          id,
+          version: 0,
+          speechText: 'The same spoken sentence',
+        })
+      ).status,
+    ).toBe(200)
+  }
+  return { scope: 'selected' as const, ids: ['pg001_p', 'pg002_n'], force: true }
+}
+
+it('AC-3: shares fresh duplicate recordings per job, preserves revisions and retries failures', async () => {
+  const options = await duplicateSpeech()
+  for (let run = 1; run <= 2; run++) {
+    const done = await finish((await start(options)).id)
+    expect(done.completed).toBe(2)
+    expect(done.cached).toBe(1)
+    expect(transport).toHaveBeenCalledTimes(run)
+    const changed = (await entries()).filter(
+      (e) => e.language === 'en' && options.ids.includes(e.id),
+    )
+    expect(changed.map((e) => e.version)).toEqual([run + 1, run + 1])
+  }
+  transport.mockImplementation(async () => Response.json({ steps: [] }))
+  expect((await finish((await start(options)).id)).failed).toBe(2)
+  expect(transport).toHaveBeenCalledTimes(3)
+  transport.mockImplementation(async () => payload())
+  expect((await finish((await start(options)).id)).completed).toBe(2)
+  expect(transport).toHaveBeenCalledTimes(4)
+})
+
+it('AC-3: cancels shared requests without publishing either entry', async () => {
+  const options = await duplicateSpeech()
+  transport.mockImplementation(
+    (_url, init) =>
+      new Promise((_resolve, reject) => {
+        init!.signal!.addEventListener('abort', () => reject(init!.signal!.reason), { once: true })
+      }),
+  )
+  const job = await start(options)
+  await vi.waitFor(() => expect(transport).toHaveBeenCalledTimes(1))
+  expect((await call(`/books/${bookId}/jobs/${job.id}/cancel`, 'POST', {})).status).toBe(200)
+  expect((await finish(job.id)).status).toBe('cancelled')
+  const changed = (await entries()).filter((e) => e.language === 'en' && options.ids.includes(e.id))
+  expect(changed.every((e) => e.version === 1)).toBe(true)
+})
+
+it('AC-4: batches intermediate receipts but persists all final results and numeric timings', async () => {
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now())
+  const writes = vi.spyOn(system.store, 'saveJob')
+  try {
+    const job = await finish((await start({ scope: 'all' })).id)
+    expect(job.completed).toBe(6)
+    expect(writes.mock.calls.length).toBeLessThanOrEqual(3)
+    const owner = (await system.auth.user(cookie.split('=')[1]))!.id
+    const recovered = await new Store(root).jobs(owner, bookId)
+    expect(recovered[0].results).toHaveLength(6)
+    expect(recovered[0].status).toBe('completed')
+    const logs = await (await call(`/books/${bookId}/jobs/${job.id}/logs`)).json()
+    const timings = logs.filter((row: { operation: string }) => row.operation === 'performance')
+    expect(timings).toHaveLength(6)
+    for (const record of timings) {
+      expect(record.input).toBe('')
+      const data = JSON.parse(record.response)
+      expect(data.elapsedMs).toBeGreaterThanOrEqual(data.entryQueueMs)
+      expect(Object.values(data).every((n) => typeof n === 'number' && n >= 0)).toBe(true)
+    }
+  } finally {
+    clock.mockRestore()
+    writes.mockRestore()
+  }
+})
+
 it('connects a static frontend using a separate bearer session and exact CORS origin', async () => {
   expect((await system.app.request('/?connect=1')).headers.get('Cross-Origin-Opener-Policy')).toBe(
     'unsafe-none',
@@ -797,7 +896,7 @@ it('reports cached normalization and labels normalization failures accurately', 
   transport.mockImplementation(async () => Response.json({ status: 'incomplete' }))
   const failed = await finish((await start({ ...options, force: true })).id)
   const logs = await (await call(`/books/${bookId}/jobs/${failed.id}/logs`)).json()
-  expect(logs).toEqual([
+  expect(logs.filter((row: { operation: string }) => row.operation !== 'performance')).toEqual([
     expect.objectContaining({ operation: 'normalization', status: 'failed', model: 'gpt-6-luna' }),
   ])
 })
