@@ -14,13 +14,7 @@ import { hasWordTimings } from '../../../packages/bundle/src/timings.js'
 import { TIMESTAMP_MODEL } from '../../../packages/tts/src/timestamps.js'
 import { runTimestampJob, estimateTimestampCost } from './timestamp-job.js'
 import { estimateSpeechCost } from './speech-cost.js'
-import {
-  atomicJson,
-  directoryBytes,
-  exists,
-  hash,
-  jsonFile,
-} from '../../../packages/bundle/src/files.js'
+import { atomicJson, exists, hash, jsonFile } from '../../../packages/bundle/src/files.js'
 import { entryKey } from '../../../packages/bundle/src/catalog.js'
 import {
   normalizeText,
@@ -305,10 +299,9 @@ export class Jobs {
             attempt,
           }
           await fs.mkdir(path.join(dir, 'calls'), { recursive: true })
-          await fs.appendFile(
-            path.join(dir, 'calls', `${job.id}.jsonl`),
-            JSON.stringify(value) + '\n',
-            { mode: 0o600 },
+          const file = path.join(dir, 'calls', `${job.id}.jsonl`)
+          await this.store.writeFiles(owner, [file], undefined, () =>
+            fs.appendFile(file, JSON.stringify(value) + '\n', { mode: 0o600 }),
           )
         }
         let release: () => void = () => {}
@@ -361,7 +354,9 @@ export class Jobs {
               )
               text = normalized.text
               signal.throwIfAborted()
-              await atomicJson(cache, { text })
+              await this.store.writeFiles(owner, [cache], Buffer.byteLength(text) * 6 + 65536, () =>
+                atomicJson(cache, { text }),
+              )
               await log('done', text)
             }
             signal.throwIfAborted()
@@ -427,14 +422,13 @@ export class Jobs {
               signal.throwIfAborted()
               file = path.join(dir, 'blobs', `${hash(audio)}.wav`)
               bytes = audio.length
-              await this.store.exclusive('storage-admission', async () => {
-                await this.store.capacity(owner, bytes + 65536)
+              await this.store.writeFiles(owner, [file, cached], bytes + 65536, async () => {
                 await fs.mkdir(path.dirname(file!), { recursive: true })
                 await fs.writeFile(file!, audio, { flag: 'wx', mode: 0o600 }).catch((e) => {
                   if (e.code !== 'EEXIST') throw e
                 })
+                await atomicJson(cached, { file: path.basename(file!) })
               })
-              await atomicJson(cached, { file: path.basename(file) })
             }
             signal.throwIfAborted()
             const audio = {

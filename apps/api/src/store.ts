@@ -8,7 +8,7 @@ import {
   Job,
   Settings,
   type BookSummary,
-  type WordTimings,
+  WordTimings,
   type VoiceSlot,
 } from '@speech/types'
 import { hydrateImportedTimings, writeWordTimings } from '../../../packages/bundle/src/timings.js'
@@ -26,6 +26,7 @@ import { entryKey } from '../../../packages/bundle/src/catalog.js'
 export class Store {
   private loaded = new Map<string, { book: Book; entries: Map<string, Entry> }>()
   private locks = new Map<string, Promise<void>>()
+  private bookBytes?: Promise<Map<string, number>>
   constructor(readonly root: string) {}
   dir(owner: string, book: string) {
     if (!/^[0-9a-f-]{36}$/.test(owner) || !/^[0-9a-f-]{36}$/.test(book))
@@ -47,14 +48,68 @@ export class Store {
       if (this.locks.get(id) === hold) this.locks.delete(id)
     }
   }
+  private usage() {
+    // Rebuild once after restart. All book mutations below update these totals
+    // under storage-admission; no stale persistent index or per-clip tree walk.
+    return (this.bookBytes ??= (async () => {
+      const totals = new Map<string, number>()
+      const root = path.join(this.root, 'books')
+      for (const owner of await fs.readdir(root).catch((e) => {
+        if (e.code === 'ENOENT') return [] as string[]
+        throw e
+      }))
+        totals.set(owner, await directoryBytes(path.join(root, owner)))
+      return totals
+    })().catch((e) => {
+      this.bookBytes = undefined
+      throw e
+    }))
+  }
+  async ownerBytes(owner: string) {
+    return (await this.usage()).get(owner) ?? 0
+  }
   async totalBytes() {
-    let total = 0
-    for (const dir of ['books', 'accounts', 'sessions', 'usage'])
+    let total = [...(await this.usage()).values()].reduce((a, b) => a + b, 0)
+    // Identity and daily allowance files are small and written independently.
+    for (const dir of ['accounts', 'sessions', 'usage'])
       total += await directoryBytes(path.join(this.root, dir))
     return total
   }
+  async writeFiles<T>(
+    owner: string,
+    files: string[],
+    additional: number | undefined,
+    fn: () => Promise<T>,
+  ) {
+    return this.exclusive('storage-admission', async () => {
+      const usage = await this.usage()
+      if (additional !== undefined) await this.capacity(owner, additional)
+      const size = async () => {
+        let bytes = 0
+        for (const file of files) {
+          const stat = await fs.stat(file).catch((e) => {
+            if (e.code === 'ENOENT') return null
+            throw e
+          })
+          if (stat) bytes += stat.isDirectory() ? await directoryBytes(file) : stat.size
+        }
+        return bytes
+      }
+      const before = await size()
+      try {
+        return await fn()
+      } finally {
+        try {
+          usage.set(owner, (usage.get(owner) ?? 0) + (await size()) - before)
+        } catch (e) {
+          this.bookBytes = undefined
+          throw e
+        }
+      }
+    })
+  }
   async capacity(owner: string, additional = 0) {
-    const used = await directoryBytes(path.join(this.root, 'books', owner)),
+    const used = await this.ownerBytes(owner),
       total = await this.totalBytes()
     if (
       used + additional > Number(process.env.MAX_OWNER_BYTES ?? 2 * 1024 ** 3) ||
@@ -143,11 +198,15 @@ export class Store {
         `${String(next.version).padStart(8, '0')}.json`,
       )
       await fs.mkdir(path.dirname(file), { recursive: true })
-      await this.exclusive('storage-admission', async () => {
-        await this.capacity(owner, Buffer.byteLength(JSON.stringify(next)) + 65536)
-        signal?.throwIfAborted()
-        await fs.writeFile(file, JSON.stringify(next), { flag: 'wx', mode: 0o600 })
-      })
+      await this.writeFiles(
+        owner,
+        [file],
+        Buffer.byteLength(JSON.stringify(next)) + 65536,
+        async () => {
+          signal?.throwIfAborted()
+          await fs.writeFile(file, JSON.stringify(next), { flag: 'wx', mode: 0o600 })
+        },
+      )
       state.entries.set(key, next)
       return next
     })
@@ -210,11 +269,16 @@ export class Store {
       if (!(await this.load(owner, id)).book.languages.includes(language))
         throw new Error('Language not found.')
       const next = { ...all, [language]: settings }
-      await atomicJson(
-        path.join(this.dir(owner, id), 'settings-history', `${Date.now()}-${randomUUID()}.json`),
-        next,
+      const history = path.join(
+        this.dir(owner, id),
+        'settings-history',
+        `${Date.now()}-${randomUUID()}.json`,
       )
-      await atomicJson(path.join(this.dir(owner, id), 'settings.json'), next)
+      const current = path.join(this.dir(owner, id), 'settings.json')
+      await this.writeFiles(owner, [history, current], undefined, async () => {
+        await atomicJson(history, next)
+        await atomicJson(current, next)
+      })
     })
   }
   async jobs(owner: string, id: string) {
@@ -230,8 +294,9 @@ export class Store {
     return jobs.sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 30)
   }
   async saveJob(job: Job) {
+    const file = path.join(this.dir(job.ownerId, job.bookId), 'jobs', `${job.id}.json`)
     await this.exclusive(`job-${job.id}`, () =>
-      atomicJson(path.join(this.dir(job.ownerId, job.bookId), 'jobs', `${job.id}.json`), job),
+      this.writeFiles(job.ownerId, [file], undefined, () => atomicJson(file, job)),
     )
   }
   async audioPath(
@@ -260,8 +325,9 @@ export class Store {
     source: 'generated' | 'manual',
     signal?: AbortSignal,
   ) {
-    const ref = await this.exclusive('storage-admission', async () => {
-      await this.capacity(owner, JSON.stringify(timings).length * 2 + 65536)
+    const data = JSON.stringify(WordTimings.parse(timings))
+    const file = path.join(this.dir(owner, id), 'blobs', `timing-${hash(data)}.json`)
+    const ref = await this.writeFiles(owner, [file], Buffer.byteLength(data) + 65536, async () => {
       signal?.throwIfAborted()
       return writeWordTimings(this.dir(owner, id), entry, slot, timings, source)
     })
@@ -278,7 +344,8 @@ export class Store {
   }
   async delete(owner: string, id: string) {
     await this.load(owner, id)
-    await fs.rm(this.dir(owner, id), { recursive: true })
+    const dir = this.dir(owner, id)
+    await this.writeFiles(owner, [dir], undefined, () => fs.rm(dir, { recursive: true }))
     this.loaded.delete(`${owner}/${id}`)
   }
 }

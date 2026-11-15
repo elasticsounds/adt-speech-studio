@@ -28,8 +28,12 @@ export async function jsonFile<T>(file: string): Promise<T> {
 export async function atomicJson(file: string, data: unknown) {
   await fs.mkdir(path.dirname(file), { recursive: true })
   const tmp = `${file}.${randomUUID()}.tmp`
-  await fs.writeFile(tmp, JSON.stringify(data), { mode: 0o600 })
-  await fs.rename(tmp, file)
+  try {
+    await fs.writeFile(tmp, JSON.stringify(data), { mode: 0o600 })
+    await fs.rename(tmp, file)
+  } finally {
+    await fs.rm(tmp, { force: true })
+  }
 }
 export async function exists(file: string) {
   try {

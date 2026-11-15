@@ -74,7 +74,7 @@ The static deployment contains application assets and the corresponding source a
 
 ## Deploy / operate
 
-The checked-in Fly configuration uses one shared CPU, 1 GB RAM and a 10 GB persistent volume in `iad`. Keep exactly **one writer instance**; the queue and locks are in-process. At most three jobs and two entry operations run concurrently across the server to bound memory while decoding audio. Auto-stop is disabled so generation can continue after closing the browser. Do not scale horizontally without replacing the job/locking architecture.
+The checked-in Fly configuration uses one shared CPU, 1 GB RAM and a 10 GB persistent volume in `iad`. Keep exactly **one writer instance**; the queue and locks are in-process. At most three jobs and two entry operations run concurrently across the server to bound memory while decoding audio. Auto-stop is disabled so generation can continue after closing the browser. Book storage totals are reconciled lazily once after startup and updated under the write lock thereafter, including partial failures; generation never rescans all books per clip. Stop the server before making external changes to its book files, then restart to reconcile. Imports/exports/deletions account for their changed directories once. Identity and allowance files are counted separately. Do not scale horizontally without replacing the job/locking architecture.
 
 For a new deployment, choose your own app name and update `app` and `APP_ORIGIN` in `fly.toml`, then:
 
