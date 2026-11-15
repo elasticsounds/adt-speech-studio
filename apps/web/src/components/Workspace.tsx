@@ -232,19 +232,18 @@ export function Workspace({
   ) => {
     setActionError(null)
     run.reset()
-    setProposal(
-      RunRequest.parse({
-        language,
-        slot,
-        scope,
-        ids,
-        settings: { ...settings },
-        credentialMode: mode,
-        operation,
-        force,
-        replaceManual: false,
-      }),
-    )
+    setProposal({
+      language,
+      slot,
+      scope,
+      ids,
+      settings: { ...settings },
+      credentialMode: mode,
+      operation,
+      force,
+      replaceManual: false,
+      concurrency: RunRequest.shape.concurrency.parse(undefined),
+    })
   }
   const retry = (ids: string[]) => {
     if (!latestJob) return
